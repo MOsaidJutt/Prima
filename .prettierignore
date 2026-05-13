@@ -1,0 +1,8 @@
+node_modules
+.next
+out
+dist
+public
+*.lock
+package-lock.json
+prisma/migrations

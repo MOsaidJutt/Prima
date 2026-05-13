@@ -1,0 +1,239 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SuperAdminRole {
+  OWNER
+  SUB_ADMIN
+}
+
+enum OrgStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionPlan {
+  STARTER
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SessionType {
+  SUPER_ADMIN
+  TENANT
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Super Admin
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SuperAdmin {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  role         SuperAdminRole @default(SUB_ADMIN)
+  permissions  String[]       @default([])
+  avatar       String?
+  isActive     Boolean        @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  auditLogs PlatformAuditLog[]
+  sessions  UserSession[]      @relation("SuperAdminSessions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Platform Settings
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PlatformSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Platform Audit Log
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PlatformAuditLog {
+  id           String   @id @default(cuid())
+  action       String
+  entity       String
+  entityId     String?
+  oldValue     Json?
+  newValue     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  superAdminId String
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Organization (Tenant)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Organization {
+  id     String    @id @default(cuid())
+  slug   String    @unique
+  name   String
+  status OrgStatus @default(TRIAL)
+
+  // Contact info
+  email      String
+  phone      String?
+  website    String?
+  address    String?
+  city       String?
+  state      String?
+  country    String  @default("PK")
+  postalCode String?
+
+  // Tax / legal
+  ntn  String?
+  strn String?
+
+  // Branding
+  logoLight      String?
+  logoDark       String?
+  favicon        String?
+  primaryColor   String  @default("#6366F1")
+  secondaryColor String  @default("#8B5CF6")
+  accentColor    String  @default("#EC4899")
+  fontFamily     String  @default("Inter")
+
+  // Locale
+  currency        String @default("PKR")
+  locale          String @default("en-PK")
+  timezone        String @default("Asia/Karachi")
+  dateFormat      String @default("DD/MM/YYYY")
+  fiscalYearStart Int    @default(1)
+
+  // Subscription
+  plan              SubscriptionPlan @default(STARTER)
+  trialEndsAt       DateTime?
+  subscriptionStart DateTime?
+  subscriptionEnd   DateTime?
+  nextBillingDate   DateTime?
+  setupFeePaid      Boolean          @default(false)
+  monthlyPrice      Decimal          @default(0)  @db.Decimal(10, 2)
+  customPricing     Boolean          @default(false)
+
+  // AI
+  aiEnabled          Boolean @default(false)
+  aiProvider         String?
+  aiApiKeyEncrypted  String?
+  aiModel            String?
+  embeddingProvider  String?
+  monthlyTokenBudget Int     @default(100000)
+  monthlyTokensUsed  Int     @default(0)
+  autoTopUpEnabled   Boolean @default(false)
+  autoTopUpThreshold Int     @default(10000)
+  autoTopUpPackId    String?
+
+  // Onboarding
+  onboardingCompleted Boolean @default(false)
+  onboardingStep      Int     @default(0)
+
+  // Billing contact
+  billingEmail String?
+  billingName  String?
+  billingPhone String?
+
+  // Admin user (set after onboarding)
+  adminEmail String?
+  adminName  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices OrganizationInvoice[]
+  sessions UserSession[]         @relation("TenantSessions")
+
+  @@index([slug])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Organization Invoice (Platform → Tenant billing)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model OrganizationInvoice {
+  id            String @id @default(cuid())
+  invoiceNumber String @unique
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  periodStart DateTime
+  periodEnd   DateTime
+  issueDate   DateTime @default(now())
+  dueDate     DateTime
+
+  subscriptionFee Decimal @default(0) @db.Decimal(10, 2)
+  setupFee        Decimal @default(0) @db.Decimal(10, 2)
+  tokenTopUpTotal Decimal @default(0) @db.Decimal(10, 2)
+  discount        Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal @db.Decimal(10, 2)
+
+  status     String    @default("DRAFT")
+  paidAt     DateTime?
+  paymentRef String?
+  notes      String?
+  pdfUrl     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User Session (shared for both Super Admin and Tenant users)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UserSession {
+  id           String      @id @default(cuid())
+  sessionToken String      @unique
+  sessionType  SessionType
+
+  // Super Admin session
+  superAdminId String?
+  superAdmin   SuperAdmin? @relation("SuperAdminSessions", fields: [superAdminId], references: [id])
+
+  // Tenant session
+  organizationId String?
+  organization   Organization? @relation("TenantSessions", fields: [organizationId], references: [id])
+  userId         String?
+
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([sessionToken])
+  @@index([superAdminId])
+  @@index([organizationId, userId])
+}
