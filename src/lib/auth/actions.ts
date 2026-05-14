@@ -120,5 +120,3 @@ export async function tenantLogout() {
   cookieStore.set(c.name, c.value, c)
   redirect('/login')
 }
-
-export { BCRYPT_ROUNDS }
