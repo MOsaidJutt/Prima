@@ -148,12 +148,15 @@ export default function InviteUserPage() {
 
             <div className="space-y-2">
               <Label>Department (optional)</Label>
-              <Select value={form.departmentId} onValueChange={(v) => set('departmentId', v)}>
+              <Select
+                value={form.departmentId || '__none__'}
+                onValueChange={(v) => set('departmentId', v === '__none__' ? '' : v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="No department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No department</SelectItem>
+                  <SelectItem value="__none__">No department</SelectItem>
                   {departments.map((d) => (
                     <SelectItem key={d.id} value={d.id}>
                       {d.name}

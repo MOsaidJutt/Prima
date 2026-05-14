@@ -5,14 +5,13 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   AlertDialog,
@@ -73,9 +72,8 @@ export default function DepartmentsPage() {
     setLoading(false)
   }
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    void fetchDepts()
+    void fetchDepts() // eslint-disable-line react-hooks/set-state-in-effect
   }, [])
 
   function openCreate() {
@@ -277,14 +275,14 @@ export default function DepartmentsPage() {
             <div className="space-y-2">
               <Label>Parent Department</Label>
               <Select
-                value={form.parentId}
-                onValueChange={(v) => setForm({ ...form, parentId: v })}
+                value={form.parentId || '__none__'}
+                onValueChange={(v) => setForm({ ...form, parentId: v === '__none__' ? '' : v })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Top-level" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Top-level</SelectItem>
+                  <SelectItem value="__none__">Top-level</SelectItem>
                   {departments
                     .filter((d) => d.id !== editing?.id)
                     .map((d) => (
@@ -298,14 +296,14 @@ export default function DepartmentsPage() {
             <div className="space-y-2">
               <Label>Manager</Label>
               <Select
-                value={form.managerId}
-                onValueChange={(v) => setForm({ ...form, managerId: v })}
+                value={form.managerId || '__none__'}
+                onValueChange={(v) => setForm({ ...form, managerId: v === '__none__' ? '' : v })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="No manager" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No manager</SelectItem>
+                  <SelectItem value="__none__">No manager</SelectItem>
                   {users.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.name}

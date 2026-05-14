@@ -254,14 +254,16 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                     <div className="space-y-2">
                       <Label>Department</Label>
                       <Select
-                        value={form.departmentId}
-                        onValueChange={(v) => setForm({ ...form, departmentId: v })}
+                        value={form.departmentId || '__none__'}
+                        onValueChange={(v) =>
+                          setForm({ ...form, departmentId: v === '__none__' ? '' : v })
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="No department" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">No department</SelectItem>
+                          <SelectItem value="__none__">No department</SelectItem>
                           {departments.map((d) => (
                             <SelectItem key={d.id} value={d.id}>
                               {d.name}

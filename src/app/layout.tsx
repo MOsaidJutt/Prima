@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/layout/theme-provider'
 import { Toaster } from 'sonner'
+import { DevAutoFill } from '@/components/dev-autofill'
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           {children}
           <Toaster richColors position="top-right" />
+          <DevAutoFill />
         </ThemeProvider>
       </body>
     </html>
