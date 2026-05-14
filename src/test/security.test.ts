@@ -37,6 +37,8 @@ vi.mock('@/lib/email', () => ({
 vi.mock('@/lib/rate-limit', () => ({
   checkLoginRateLimit: vi.fn().mockResolvedValue(null),
   checkPasswordResetRateLimit: vi.fn().mockResolvedValue(null),
+  // H-3: added in review fixes — must be in mock so requireTenantAuth doesn't throw
+  checkApiRateLimit: vi.fn().mockResolvedValue(null),
 }))
 
 import { prisma } from '@/lib/prisma'

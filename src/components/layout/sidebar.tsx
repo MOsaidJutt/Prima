@@ -18,6 +18,11 @@ import {
   Palette,
   ClipboardList,
   Building,
+  Truck,
+  Package,
+  Warehouse,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -34,6 +39,12 @@ const superAdminNav: NavItem[] = [
 
 const tenantAdminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  // Phase 2 — Business Entities
+  { label: 'Distributors', href: '/admin/distributors', icon: Truck, slug: 'distributors:read' },
+  { label: 'Clients', href: '/admin/clients', icon: Users, slug: 'clients:read' },
+  { label: 'Products', href: '/admin/products', icon: Package, slug: 'products:read' },
+  { label: 'Inventory', href: '/admin/inventory', icon: Warehouse, slug: 'inventory:read' },
+  // Phase 1 — Team
   { label: 'Users', href: '/admin/users', icon: Users, slug: 'users:read' },
   { label: 'Roles', href: '/admin/settings/roles', icon: Shield, slug: 'roles:read' },
   {

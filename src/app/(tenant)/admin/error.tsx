@@ -15,7 +15,7 @@ interface ErrorBoundaryProps {
 
 export default function AdminError({ error, reset }: ErrorBoundaryProps) {
   useEffect(() => {
-    // Forward to Sentry when integrated (Phase 7)
+    import('@sentry/nextjs').then(({ captureException }) => captureException(error))
     console.error('[admin-error-boundary]', error)
   }, [error])
 

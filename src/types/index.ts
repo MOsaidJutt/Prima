@@ -43,3 +43,102 @@ export type PaginatedResponse<T> = {
   pageSize: number
   totalPages: number
 }
+
+// ── Phase 2 entity types ──────────────────────────────────────────────────────
+// Shared between API route return values and client fetch handlers.
+// Use these instead of inline type annotations to keep both sides in sync.
+
+export type DistributorStatus = 'ACTIVE' | 'INACTIVE' | 'BLACKLISTED'
+export type DistributorTier = 'GOLD' | 'SILVER' | 'BRONZE'
+export type ClientStatus = 'ACTIVE' | 'INACTIVE' | 'PROSPECT' | 'CHURNED'
+export type BusinessType =
+  | 'RETAIL'
+  | 'WHOLESALE'
+  | 'DISTRIBUTOR'
+  | 'MANUFACTURER'
+  | 'SERVICE'
+  | 'OTHER'
+export type BusinessSize = 'SMALL' | 'MEDIUM' | 'LARGE' | 'ENTERPRISE'
+export type ProductStatus = 'ACTIVE' | 'INACTIVE' | 'DISCONTINUED'
+export type InventoryTxType =
+  | 'PURCHASE'
+  | 'SALE'
+  | 'ADJUSTMENT_IN'
+  | 'ADJUSTMENT_OUT'
+  | 'TRANSFER_IN'
+  | 'TRANSFER_OUT'
+  | 'RETURN'
+  | 'WRITE_OFF'
+  | 'STOCK_TAKE'
+
+export type DistributorRow = {
+  id: string
+  code: string
+  companyName: string
+  contactName: string | null
+  email: string | null
+  phone: string | null
+  city: string | null
+  status: DistributorStatus
+  tier: DistributorTier
+  currentBalance: number
+  creditLimit: number
+  rating: number
+  createdAt: string
+  _count: { clients: number }
+}
+
+export type ClientRow = {
+  id: string
+  code: string
+  companyName: string
+  contactName: string | null
+  email: string | null
+  phone: string | null
+  city: string | null
+  status: ClientStatus
+  businessType: BusinessType | null
+  totalLifetimeValue: number
+  lastOrderDate: string | null
+  paymentBehaviorScore: number | null
+  paymentBehaviorLabel: string | null
+  distributor: { id: string; companyName: string } | null
+  assignedRep: { id: string; name: string } | null
+}
+
+export type ProductRow = {
+  id: string
+  sku: string
+  name: string
+  brand: string | null
+  sellingPrice: number
+  costPrice: number
+  reorderLevel: number
+  status: ProductStatus
+  images: string[]
+  totalStock: number
+  isLowStock: boolean
+  category: { id: string; name: string } | null
+}
+
+export type WarehouseRow = {
+  id: string
+  code: string
+  name: string
+  city: string | null
+  isDefault: boolean
+  isActive: boolean
+  _count: { inventoryStock: number }
+}
+
+export type InventoryTransactionRow = {
+  id: string
+  type: InventoryTxType
+  quantity: number
+  reason: string | null
+  createdAt: string
+  product: { name: string; sku: string }
+  fromWarehouse: { name: string } | null
+  toWarehouse: { name: string } | null
+  performedByUser: { name: string } | null
+}

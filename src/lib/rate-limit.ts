@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 
 let _loginLimiter: Ratelimit | null = null
 let _passwordResetLimiter: Ratelimit | null = null
+let _apiLimiter: Ratelimit | null = null
 
 function isUpstashConfigured(): boolean {
   return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
@@ -23,6 +24,19 @@ function getLoginLimiter(): Ratelimit {
     })
   }
   return _loginLimiter
+}
+
+// H-3: per-user general API rate limit — 120 requests per minute.
+// Applied in requireTenantAuth so it covers both Phase 1 and Phase 2 routes.
+function getApiLimiter(): Ratelimit {
+  if (!_apiLimiter) {
+    _apiLimiter = new Ratelimit({
+      redis: Redis.fromEnv(),
+      limiter: Ratelimit.slidingWindow(120, '1 m'),
+      prefix: 'prima:rl:api',
+    })
+  }
+  return _apiLimiter
 }
 
 function getPasswordResetLimiter(): Ratelimit {
@@ -73,6 +87,18 @@ export async function checkLoginRateLimit(req: Request): Promise<NextResponse | 
           'Retry-After': '60',
         },
       }
+    )
+  }
+  return null
+}
+
+export async function checkApiRateLimit(userId: string): Promise<NextResponse | null> {
+  if (!isUpstashConfigured()) return null
+  const { success } = await getApiLimiter().limit(userId)
+  if (!success) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please slow down.' },
+      { status: 429, headers: { 'Retry-After': '60' } }
     )
   }
   return null

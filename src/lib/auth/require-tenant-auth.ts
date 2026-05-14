@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getTenantSession } from '@/lib/auth/session'
 import { prisma } from '@/lib/prisma'
 import { hasPermission } from '@/lib/permissions'
+import { checkApiRateLimit } from '@/lib/rate-limit'
 import type { PermissionSlug } from '@/lib/permissions'
 import type { TenantSession, UserWithRole } from '@/types'
 
@@ -39,6 +40,10 @@ export async function requireTenantAuth(slug?: PermissionSlug): Promise<AuthResu
       response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
     }
   }
+
+  // H-3: per-user general API rate limit (no-op when Upstash is not configured)
+  const rateLimitResponse = await checkApiRateLimit(session.userId)
+  if (rateLimitResponse) return { ok: false, response: rateLimitResponse }
 
   const user = await prisma.user.findFirst({
     where: {

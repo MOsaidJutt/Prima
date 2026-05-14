@@ -63,7 +63,9 @@ export async function getSession(): Promise<AppSession | null> {
 const COOKIE_BASE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  // M-4: 'strict' prevents the cookie being sent on any cross-site navigation,
+  // which is correct for a SaaS admin panel with no legitimate cross-site flows.
+  sameSite: 'strict' as const,
   path: '/',
 }
 

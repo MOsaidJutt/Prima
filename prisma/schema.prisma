@@ -210,6 +210,16 @@ model Organization {
   activityFeed     ActivityFeed[]
   invoiceTemplates InvoiceTemplate[]
 
+  // Phase 2 relations
+  productCategories     ProductCategory[]
+  products              Product[]
+  distributors          Distributor[]
+  clients               Client[]
+  warehouses            Warehouse[]
+  inventoryStock        InventoryStock[]
+  inventoryTransactions InventoryTransaction[]
+  attachments           Attachment[]
+
   @@index([slug])
   @@index([status])
   @@index([deletedAt])
@@ -421,6 +431,10 @@ model User {
   auditLogs       AuditLog[]       @relation("AuditUser")
   passwordResets  PasswordResetToken[]
 
+  // Phase 2
+  assignedClients       Client[]               @relation("ClientRep")
+  inventoryTransactions InventoryTransaction[] @relation("InventoryTxUser")
+
   @@unique([organizationId, email])
   @@index([organizationId, deletedAt])
   @@index([roleId])
@@ -566,6 +580,418 @@ model ActivityFeed {
   updatedAt DateTime @updatedAt // Always equals createdAt (append-only); required by PowerSync sync protocol
 
   @@index([organizationId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DistributorStatus {
+  ACTIVE
+  INACTIVE
+  BLACKLISTED
+}
+
+enum DistributorTier {
+  GOLD
+  SILVER
+  BRONZE
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECT
+  CHURNED
+}
+
+enum BusinessType {
+  RETAIL
+  WHOLESALE
+  DISTRIBUTOR
+  MANUFACTURER
+  SERVICE
+  OTHER
+}
+
+enum BusinessSize {
+  SMALL
+  MEDIUM
+  LARGE
+  ENTERPRISE
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
+enum InventoryTxType {
+  PURCHASE
+  SALE
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+  RETURN
+  WRITE_OFF
+  STOCK_TAKE
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProductCategory
+// Hierarchical (parentId for nesting). Sync-ready.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ProductCategory {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name        String
+  description String?
+  parentId    String?          @db.Uuid
+  parent      ProductCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    ProductCategory[] @relation("CategoryHierarchy")
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  products Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, deletedAt])
+  @@index([parentId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Product
+// Full catalog entry. pgvector embedding for Phase 6 AI similarity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Product {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  sku           String
+  barcode       String?
+  name          String
+  description   String?
+
+  categoryId String?          @db.Uuid
+  category   ProductCategory? @relation(fields: [categoryId], references: [id])
+
+  brand         String?
+  unitOfMeasure String        @default("pcs")
+  packSize      Int           @default(1)
+
+  costPrice    Decimal @default(0) @db.Decimal(10, 2)
+  sellingPrice Decimal @default(0) @db.Decimal(10, 2)
+  mrp          Decimal? @db.Decimal(10, 2)
+  taxRate      Decimal @default(0) @db.Decimal(5, 2)
+
+  reorderLevel Int           @default(0)
+  status       ProductStatus @default(ACTIVE)
+
+  images String[] @default([])
+
+  // Phase 6: pgvector embedding for AI similarity search
+  embedding Unsupported("vector(1536)")?
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  inventoryStock        InventoryStock[]
+  inventoryTransactions InventoryTransaction[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId, deletedAt])
+  @@index([categoryId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Distributor
+// Auto-generated code per org (DST-0001). Sync-ready.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Distributor {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  code        String
+  companyName String
+  contactName String?
+  email       String?
+  phone       String?
+  phone2      String?
+  website     String?
+
+  address    String?
+  city       String?
+  state      String?
+  country    String   @default("PK")
+  postalCode String?
+  latitude   Decimal? @db.Decimal(10, 7)
+  longitude  Decimal? @db.Decimal(10, 7)
+
+  ntn  String?
+  strn String?
+
+  bankName    String?
+  bankAccount String?
+  bankBranch  String?
+  iban        String?
+
+  status       DistributorStatus @default(ACTIVE)
+  tier         DistributorTier   @default(BRONZE)
+  creditLimit  Decimal           @default(0) @db.Decimal(12, 2)
+  paymentTerms Int               @default(30)
+
+  // Computed by Phase 3 jobs
+  currentBalance Decimal @default(0) @db.Decimal(12, 2)
+  totalPurchases Decimal @default(0) @db.Decimal(12, 2)
+  rating         Decimal @default(0) @db.Decimal(3, 1)
+
+  tags  String[] @default([])
+  notes String?
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  clients               Client[]
+  attachments           Attachment[]           @relation("DistributorAttachments")
+  inventoryTransactions InventoryTransaction[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, deletedAt])
+  @@index([status])
+  @@index([city])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Client
+// Auto-generated code per org (CLT-0001). Linked to optional Distributor.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Client {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  code        String
+  companyName String
+  contactName String?
+  email       String?
+  phone       String?
+  phone2      String?
+  website     String?
+
+  address    String?
+  city       String?
+  state      String?
+  country    String   @default("PK")
+  postalCode String?
+  latitude   Decimal? @db.Decimal(10, 7)
+  longitude  Decimal? @db.Decimal(10, 7)
+
+  ntn  String?
+  strn String?
+
+  distributorId String?      @db.Uuid
+  distributor   Distributor? @relation(fields: [distributorId], references: [id])
+
+  assignedRepId String? @db.Uuid
+  assignedRep   User?   @relation("ClientRep", fields: [assignedRepId], references: [id])
+
+  businessType BusinessType?
+  businessSize BusinessSize?
+  industry     String?
+
+  status       ClientStatus @default(ACTIVE)
+  creditLimit  Decimal      @default(0) @db.Decimal(12, 2)
+  paymentTerms Int          @default(30)
+
+  // Payment behavior — computed in Phase 6
+  paymentBehaviorScore Int?
+  paymentBehaviorLabel String?
+
+  // Computed financial — updated by Phase 3 jobs
+  currentBalance     Decimal   @default(0) @db.Decimal(12, 2)
+  totalLifetimeValue Decimal   @default(0) @db.Decimal(12, 2)
+  totalOrders        Int       @default(0)
+  averageOrderValue  Decimal   @default(0) @db.Decimal(12, 2)
+  firstOrderDate     DateTime?
+  lastOrderDate      DateTime?
+
+  tags  String[] @default([])
+  notes String?
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  attachments Attachment[] @relation("ClientAttachments")
+
+  @@unique([organizationId, code])
+  @@index([organizationId, deletedAt])
+  @@index([status])
+  @@index([distributorId])
+  @@index([assignedRepId])
+  @@index([city])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Warehouse
+// Physical storage locations. Sync-ready.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Warehouse {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  code      String
+  name      String
+  address   String?
+  city      String?
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  inventoryStock   InventoryStock[]
+  transactionsFrom InventoryTransaction[] @relation("TxFromWarehouse")
+  transactionsTo   InventoryTransaction[] @relation("TxToWarehouse")
+
+  @@unique([organizationId, code])
+  @@index([organizationId, deletedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InventoryStock
+// Current stock level per product per warehouse.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model InventoryStock {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  productId   String    @db.Uuid
+  product     Product   @relation(fields: [productId], references: [id])
+  warehouseId String    @db.Uuid
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  quantity    Int @default(0)
+  reservedQty Int @default(0)
+
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([productId, warehouseId])
+  @@index([organizationId])
+  @@index([productId])
+  @@index([warehouseId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InventoryTransaction
+// Immutable audit trail of every stock movement. Append-only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model InventoryTransaction {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  productId String  @db.Uuid
+  product   Product @relation(fields: [productId], references: [id])
+
+  fromWarehouseId String?    @db.Uuid
+  fromWarehouse   Warehouse? @relation("TxFromWarehouse", fields: [fromWarehouseId], references: [id])
+
+  toWarehouseId String?    @db.Uuid
+  toWarehouse   Warehouse? @relation("TxToWarehouse", fields: [toWarehouseId], references: [id])
+
+  type     InventoryTxType
+  quantity Int
+
+  unitCost Decimal? @db.Decimal(10, 2)
+
+  distributorId String?      @db.Uuid
+  distributor   Distributor? @relation(fields: [distributorId], references: [id])
+
+  referenceType String? // "DSR" | "INVOICE" | "MANUAL" | "STOCK_TAKE"
+  referenceId   String?
+
+  reason String?
+  notes  String?
+
+  performedBy     String? @db.Uuid
+  performedByUser User?   @relation("InventoryTxUser", fields: [performedBy], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([productId])
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+  @@index([type])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Attachment
+// File uploads linked to distributors or clients. Stored in R2.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Attachment {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  distributorId String?      @db.Uuid
+  distributor   Distributor? @relation("DistributorAttachments", fields: [distributorId], references: [id])
+
+  clientId String?  @db.Uuid
+  client   Client?  @relation("ClientAttachments", fields: [clientId], references: [id])
+
+  name      String
+  fileUrl   String
+  fileKey   String
+  mimeType  String
+  sizeBytes Int
+
+  uploadedBy String? @db.Uuid
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([organizationId, deletedAt])
+  @@index([distributorId])
+  @@index([clientId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

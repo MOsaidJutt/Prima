@@ -97,7 +97,7 @@ describe('superAdminLogin', () => {
     // Verify cookie is httpOnly
     const [, , opts] = mockSet.mock.calls[0] as [string, string, Record<string, unknown>]
     expect(opts.httpOnly).toBe(true)
-    expect(opts.sameSite).toBe('lax')
+    expect(opts.sameSite).toBe('strict')
   })
 
   it('updates lastLoginAt on successful login', async () => {
