@@ -171,8 +171,10 @@ model Organization {
   onboardingStep      Int     @default(0)
 
   // Admin contact (set after onboarding)
-  adminEmail String?
-  adminName  String?
+  adminEmail        String?
+  adminName         String?
+  // Phase 0: password hash for the org admin, stored here until Phase 1c adds the User model
+  adminPasswordHash String?
 
   // Billing contact
   billingEmail String?
@@ -185,8 +187,9 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  invoices OrganizationInvoice[]
-  sessions UserSession[]         @relation("TenantSessions")
+  invoices     OrganizationInvoice[]
+  sessions     UserSession[]          @relation("TenantSessions")
+  invitations  OrganizationInvitation[]
 
   @@index([slug])
   @@index([status])
@@ -231,6 +234,30 @@ model OrganizationInvoice {
   @@index([organizationId, deletedAt])
   @@index([status])
   @@index([dueDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OrganizationInvitation
+// C-1: Stores the hashed invite token so it can be verified when the tenant
+// admin clicks the link. Token is hashed with bcrypt to prevent DB-read attacks.
+// Consumed (acceptedAt set) on first use. Expires after 48 hours.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model OrganizationInvitation {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  email      String
+  tokenHash  String    @unique // bcrypt hash of the raw token emailed to the admin
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([expiresAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

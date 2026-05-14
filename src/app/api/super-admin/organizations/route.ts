@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { getSuperAdminSession } from '@/lib/auth/session'
+import { requireOwner } from '@/lib/auth/permissions'
 import { sendOrganizationInvite } from '@/lib/email'
 import { nanoid } from 'nanoid'
+
+const INVITE_TTL_HOURS = 48
+const BCRYPT_ROUNDS = 10 // lower than login hash — tokens are long-random, not user passwords
 
 const createOrgSchema = z.object({
   name: z.string().min(2).max(100),
@@ -20,8 +25,11 @@ const createOrgSchema = z.object({
 })
 
 export async function POST(request: Request) {
+  // C-3: creating an org is OWNER-only; sub-admins may view but not create
   const session = await getSuperAdminSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = requireOwner(session)
+  if (denied || !session)
+    return denied ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
     const body = await request.json()
@@ -33,24 +41,39 @@ export async function POST(request: Request) {
     }
 
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-    const inviteToken = nanoid(32)
+    const inviteToken = nanoid(48) // 48 chars of URL-safe randomness
+    const tokenHash = await bcrypt.hash(inviteToken, BCRYPT_ROUNDS)
+    const inviteExpiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000)
 
-    const org = await prisma.organization.create({
-      data: {
-        name: data.name,
-        slug: data.slug,
-        email: data.email,
-        adminEmail: data.email,
-        adminName: data.adminName,
-        phone: data.phone,
-        city: data.city,
-        plan: data.plan,
-        status: 'TRIAL',
-        trialEndsAt,
-      },
+    // C-1: org + invitation created atomically
+    const org = await prisma.$transaction(async (tx) => {
+      const created = await tx.organization.create({
+        data: {
+          name: data.name,
+          slug: data.slug,
+          email: data.email,
+          adminEmail: data.email,
+          adminName: data.adminName,
+          phone: data.phone,
+          city: data.city,
+          plan: data.plan,
+          status: 'TRIAL',
+          trialEndsAt,
+        },
+      })
+
+      await tx.organizationInvitation.create({
+        data: {
+          organizationId: created.id,
+          email: data.email,
+          tokenHash,
+          expiresAt: inviteExpiresAt,
+        },
+      })
+
+      return created
     })
 
-    // Log the action
     await prisma.platformAuditLog.create({
       data: {
         superAdminId: session.superAdmin.id,
@@ -61,13 +84,13 @@ export async function POST(request: Request) {
       },
     })
 
-    // Send invitation email (non-blocking)
+    // Send invitation email (non-blocking — DB is the source of truth, not the email)
     sendOrganizationInvite({
       to: data.email,
       orgName: data.name,
       inviteToken,
       adminName: data.adminName,
-    }).catch(console.error)
+    }).catch((err: unknown) => console.error('[invite-email]', err))
 
     return NextResponse.json(
       { success: true, data: { id: org.id, slug: org.slug } },
@@ -88,7 +111,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const q = searchParams.get('q')
-  const page = parseInt(searchParams.get('page') ?? '1')
+  // M-2: guard against NaN (e.g. ?page=abc) — parseInt returns NaN which Prisma silently treats as 0
+  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
   const pageSize = 20
 
   const where = q

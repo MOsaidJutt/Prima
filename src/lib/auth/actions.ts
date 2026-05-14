@@ -4,13 +4,21 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
-import { createSuperAdminToken, setSessionCookie, clearSessionCookie } from '@/lib/auth/session'
+import {
+  createSuperAdminToken,
+  createTenantToken,
+  setSessionCookie,
+  clearSessionCookie,
+} from '@/lib/auth/session'
+
+const BCRYPT_ROUNDS = 12
 
 // ── Super Admin Login ──────────────────────────────────────────────────────
 
 export async function superAdminLogin(email: string, password: string) {
-  const admin = await prisma.superAdmin.findUnique({
-    where: { email: email.toLowerCase().trim() },
+  // C-2: filter deletedAt: null so soft-deleted admins cannot log in
+  const admin = await prisma.superAdmin.findFirst({
+    where: { email: email.toLowerCase().trim(), deletedAt: null },
   })
 
   if (!admin || !admin.isActive) {
@@ -48,27 +56,69 @@ export async function superAdminLogin(email: string, password: string) {
 
 export async function superAdminLogout() {
   const cookieStore = await cookies()
+  // L-3: use clearSessionCookie which includes full security flags
   const c = clearSessionCookie('super_admin')
-  cookieStore.set(c.name, c.value, { maxAge: 0, path: '/' })
+  cookieStore.set(c.name, c.value, c)
   redirect('/super-admin/login')
 }
 
 // ── Tenant Login ──────────────────────────────────────────────────────────
+// Phase 0: authenticates against adminPasswordHash stored on Organization.
+// Phase 1c: replaced with User model auth.
 
-export async function tenantLogin(_email: string, _password: string, _organizationSlug?: string) {
-  // Phase 0: We store tenant users in the Phase 1 User model.
-  // For now, we support the Tenant Admin whose credentials are set during onboarding.
-  // We look up by email in the UserSession table's associated org.
-  // This will be expanded in Phase 1 when the User model is added.
+export async function tenantLogin(email: string, password: string) {
+  const org = await prisma.organization.findFirst({
+    where: { adminEmail: email.toLowerCase().trim(), deletedAt: null },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      status: true,
+      plan: true,
+      adminPasswordHash: true,
+      onboardingCompleted: true,
+    },
+  })
 
-  // Placeholder: check against org adminEmail (set during invite acceptance)
-  // Full implementation in Phase 1 with User model
-  return { error: 'Tenant auth will be completed in Phase 1 when User model is added.' }
+  if (!org || !org.adminPasswordHash) {
+    return { error: 'Invalid credentials' }
+  }
+
+  if (org.status === 'SUSPENDED' || org.status === 'CANCELLED') {
+    return { error: 'Your account has been suspended. Contact support.' }
+  }
+
+  const valid = await bcrypt.compare(password, org.adminPasswordHash)
+  if (!valid) {
+    return { error: 'Invalid credentials' }
+  }
+
+  const token = await createTenantToken({
+    type: 'tenant',
+    userId: org.id, // Phase 0: org id as placeholder; replaced by User.id in Phase 1c
+    organizationId: org.id,
+    organization: {
+      id: org.id,
+      slug: org.slug,
+      name: org.name,
+      status: org.status,
+      plan: org.plan,
+    },
+    sessionToken: crypto.randomUUID(),
+  })
+
+  const cookieStore = await cookies()
+  const cookieOptions = setSessionCookie('tenant', token)
+  cookieStore.set(cookieOptions.name, cookieOptions.value, cookieOptions)
+
+  return { success: true, onboardingCompleted: org.onboardingCompleted }
 }
 
 export async function tenantLogout() {
   const cookieStore = await cookies()
   const c = clearSessionCookie('tenant')
-  cookieStore.set(c.name, c.value, { maxAge: 0, path: '/' })
+  cookieStore.set(c.name, c.value, c)
   redirect('/login')
 }
+
+export { BCRYPT_ROUNDS }

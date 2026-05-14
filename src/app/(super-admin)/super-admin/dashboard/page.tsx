@@ -5,11 +5,12 @@ import { Building2, Users, TrendingUp, AlertCircle } from 'lucide-react'
 export const metadata = { title: 'Platform Dashboard' }
 
 async function getStats() {
+  // M-1: filter deletedAt: null — soft-cancelled orgs must not inflate counts
   const [totalOrgs, activeOrgs, trialOrgs, suspendedOrgs] = await Promise.all([
-    prisma.organization.count(),
-    prisma.organization.count({ where: { status: 'ACTIVE' } }),
-    prisma.organization.count({ where: { status: 'TRIAL' } }),
-    prisma.organization.count({ where: { status: 'SUSPENDED' } }),
+    prisma.organization.count({ where: { deletedAt: null } }),
+    prisma.organization.count({ where: { status: 'ACTIVE', deletedAt: null } }),
+    prisma.organization.count({ where: { status: 'TRIAL', deletedAt: null } }),
+    prisma.organization.count({ where: { status: 'SUSPENDED', deletedAt: null } }),
   ])
   return { totalOrgs, activeOrgs, trialOrgs, suspendedOrgs }
 }

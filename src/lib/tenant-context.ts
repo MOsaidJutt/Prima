@@ -12,6 +12,9 @@
  *   // Reads — auto-scoped to org, auto-filters deletedAt: null
  *   const clients = await repo.scoped(prisma.client).findMany({ where: { status: 'ACTIVE' } })
  *
+ *   // Lookup by ID — must use findFirst, never findUnique
+ *   const client = await repo.scoped(prisma.client).findFirst({ where: { id } })
+ *
  *   // Writes — auto-injects organizationId + lastModifiedBy
  *   const client = await repo.scoped(prisma.client).create({ data: { name: 'ACME' } })
  *
@@ -21,11 +24,15 @@
  * Raw Prisma escape hatch (use sparingly — must add organizationId manually):
  *   import { withOrg } from '@/lib/tenant-context'
  *   const result = await prisma.client.findMany(withOrg(orgId, { where: { city: 'Karachi' } }))
+ *
+ * C-4: findUnique is intentionally absent from TenantScopedRepository.
+ * findUnique bypasses organizationId scoping (unique constraints use only the
+ * key field). Removing it instead of asserting prevents the misuse pattern
+ * entirely — a removed method cannot be forgotten.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 // ── Context object ────────────────────────────────────────────────────────────
-// Extended in Phase 8 to include deviceId for conflict resolution metadata.
 
 export type TenantContext = {
   organizationId: string
@@ -49,11 +56,11 @@ export function withOrg<T extends Record<string, unknown>>(
 }
 
 // ── Internal delegate type ────────────────────────────────────────────────────
+// findUnique deliberately excluded — see C-4 note above.
 
 type AnyDelegate = {
   findMany: (args?: unknown) => Promise<unknown[]>
   findFirst: (args?: unknown) => Promise<unknown>
-  findUnique: (args?: unknown) => Promise<unknown>
   create: (args: unknown) => Promise<unknown>
   update: (args: unknown) => Promise<unknown>
   updateMany: (args: unknown) => Promise<unknown>
@@ -70,14 +77,6 @@ export class TenantScopedRepository {
     this.ctx = ctx
   }
 
-  /**
-   * Returns a scoped proxy for a Prisma model delegate.
-   * All operations are automatically:
-   *  - Scoped to organizationId
-   *  - Filtered for deletedAt: null on reads
-   *  - Stamped with lastModifiedBy on writes
-   *  - Soft-deleted (deletedAt = now()) instead of hard-deleted
-   */
   scoped(model: unknown) {
     const delegate = model as AnyDelegate
     const { organizationId, userId, deviceId } = this.ctx
@@ -88,54 +87,34 @@ export class TenantScopedRepository {
     }
 
     return {
-      // ── Reads — scoped + soft-delete filter ──────────────────────────────
+      // ── Reads ─────────────────────────────────────────────────────────────
 
       findMany: (args: Record<string, unknown> = {}) =>
         delegate.findMany({
           ...args,
-          where: {
-            ...(args.where as Record<string, unknown>),
-            organizationId,
-            deletedAt: null,
-          },
+          where: { ...(args.where as Record<string, unknown>), organizationId, deletedAt: null },
         }),
 
+      // findFirst is the correct way to look up by ID within a tenant scope:
+      //   findFirst({ where: { id, organizationId } }) — enforces both constraints.
       findFirst: (args: Record<string, unknown> = {}) =>
         delegate.findFirst({
           ...args,
-          where: {
-            ...(args.where as Record<string, unknown>),
-            organizationId,
-            deletedAt: null,
-          },
+          where: { ...(args.where as Record<string, unknown>), organizationId, deletedAt: null },
         }),
-
-      findUnique: (args: Record<string, unknown> = {}) =>
-        // findUnique uses a unique key — we can't inject where.organizationId
-        // without breaking the unique constraint lookup. Caller must verify
-        // the returned record belongs to this org.
-        delegate.findUnique(args),
 
       count: (args: Record<string, unknown> = {}) =>
         delegate.count({
           ...args,
-          where: {
-            ...(args.where as Record<string, unknown>),
-            organizationId,
-            deletedAt: null,
-          },
+          where: { ...(args.where as Record<string, unknown>), organizationId, deletedAt: null },
         }),
 
-      // ── Writes — inject org + lastModifiedBy ─────────────────────────────
+      // ── Writes ────────────────────────────────────────────────────────────
 
       create: (args: { data: Record<string, unknown>; [k: string]: unknown }) =>
         delegate.create({
           ...args,
-          data: {
-            ...args.data,
-            organizationId,
-            ...modifiedMeta,
-          },
+          data: { ...args.data, organizationId, ...modifiedMeta },
         }),
 
       update: (args: {
@@ -146,10 +125,7 @@ export class TenantScopedRepository {
         delegate.update({
           ...args,
           where: { ...args.where, organizationId },
-          data: {
-            ...args.data,
-            ...modifiedMeta,
-          },
+          data: { ...args.data, ...modifiedMeta },
         }),
 
       updateMany: (args: {
@@ -159,31 +135,21 @@ export class TenantScopedRepository {
       }) =>
         delegate.updateMany({
           ...args,
-          where: {
-            ...args.where,
-            organizationId,
-            deletedAt: null,
-          },
-          data: {
-            ...args.data,
-            ...modifiedMeta,
-          },
+          where: { ...args.where, organizationId, deletedAt: null },
+          data: { ...args.data, ...modifiedMeta },
         }),
 
-      // ── Soft delete — sets deletedAt instead of hard DELETE ──────────────
-      // Never issues a real DELETE statement on domain data.
+      // ── Soft delete ───────────────────────────────────────────────────────
+      // Never issues a real DELETE. Sets deletedAt = now().
 
       delete: (args: { where: Record<string, unknown>; [k: string]: unknown }) =>
         delegate.update({
           ...args,
           where: { ...args.where, organizationId },
-          data: {
-            deletedAt: new Date(),
-            ...modifiedMeta,
-          },
+          data: { deletedAt: new Date(), ...modifiedMeta },
         }),
 
-      // ── Hard delete — use ONLY for non-domain data (e.g. expired sessions) ─
+      // ── Hard delete — ONLY for non-domain data (e.g. expired sessions) ───
       hardDelete: (args: Record<string, unknown>) => delegate.delete(args),
     }
   }

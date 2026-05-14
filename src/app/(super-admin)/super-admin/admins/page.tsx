@@ -8,7 +8,12 @@ import Link from 'next/link'
 export const metadata = { title: 'Admins' }
 
 export default async function AdminsPage() {
-  const admins = await prisma.superAdmin.findMany({ orderBy: { createdAt: 'asc' } })
+  // H-7: filter deletedAt: null — soft-deleted admins must not appear in the list
+  const admins = await prisma.superAdmin.findMany({
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+    take: 100,
+  })
 
   return (
     <div className="space-y-6">
