@@ -30,6 +30,8 @@ const TENANT_PAYLOAD: TenantSession = {
     status: 'ACTIVE',
     plan: 'PRO',
   },
+  role: { id: 'role-uuid-1', name: 'Owner', isSystem: true },
+  permissions: ['*'],
   sessionToken: 'tenant-session-token',
 }
 

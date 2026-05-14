@@ -35,6 +35,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Tenant protected routes ────────────────────────────────────────────────
+  // /invite and /reset-password are public (token-gated) — not in this list
   const tenantProtected = ['/admin', '/manager', '/dashboard', '/onboarding']
   const isTenantRoute = tenantProtected.some((p) => pathname.startsWith(p))
 

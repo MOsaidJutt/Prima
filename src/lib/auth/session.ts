@@ -2,7 +2,6 @@ import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import type { AppSession, SuperAdminSession, TenantSession } from '@/types'
 
-// C-5: Throw at module init if secret is missing — never silently use a fallback
 if (!process.env.BETTER_AUTH_SECRET) {
   throw new Error(
     'BETTER_AUTH_SECRET environment variable is required. ' +
@@ -61,8 +60,6 @@ export async function getSession(): Promise<AppSession | null> {
   return (await getSuperAdminSession()) ?? (await getTenantSession())
 }
 
-// L-3: Pass full security options on set AND clear to ensure the browser
-// replaces the same cookie (matching name + path + domain + flags).
 const COOKIE_BASE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',

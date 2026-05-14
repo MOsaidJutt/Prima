@@ -7,6 +7,7 @@ type DashboardLayoutProps = {
   orgName?: string
   userName?: string
   userEmail?: string
+  userAvatar?: string | null
 }
 
 export function DashboardLayout({
@@ -15,12 +16,18 @@ export function DashboardLayout({
   orgName,
   userName,
   userEmail,
+  userAvatar,
 }: DashboardLayoutProps) {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar variant={variant} orgName={orgName} />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar variant={variant} userName={userName} userEmail={userEmail} />
+        <TopBar
+          variant={variant}
+          userName={userName}
+          userEmail={userEmail}
+          userAvatar={userAvatar}
+        />
         <main className="bg-background flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>

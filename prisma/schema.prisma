@@ -128,7 +128,7 @@ model Organization {
   ntn  String?
   strn String?
 
-  // Branding
+  // Branding (stored as hex — converted to HSL by the layout for CSS vars)
   logoLight      String?
   logoDark       String?
   favicon        String?
@@ -136,6 +136,14 @@ model Organization {
   secondaryColor String  @default("#334155")
   accentColor    String  @default("#0369A1")
   fontFamily     String  @default("Plus Jakarta Sans")
+
+  // Email branding
+  emailBannerUrl  String?
+  emailFooterText String?
+
+  // Login page customization
+  loginCustomText String?
+  loginBgImage    String?
 
   // Locale
   currency        String @default("PKR")
@@ -173,7 +181,7 @@ model Organization {
   // Admin contact (set after onboarding)
   adminEmail        String?
   adminName         String?
-  // Phase 0: password hash for the org admin, stored here until Phase 1c adds the User model
+  // Phase 0: password hash for the org admin — nulled after Phase 1c User is created
   adminPasswordHash String?
 
   // Billing contact
@@ -187,9 +195,20 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  invoices     OrganizationInvoice[]
-  sessions     UserSession[]          @relation("TenantSessions")
-  invitations  OrganizationInvitation[]
+  // Platform relations
+  invoices    OrganizationInvoice[]
+  sessions    UserSession[]          @relation("TenantSessions")
+  invitations OrganizationInvitation[]
+
+  // Phase 1c tenant relations
+  users            User[]
+  roles            Role[]
+  departments      Department[]
+  userInvitations  UserInvitation[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  activityFeed     ActivityFeed[]
+  invoiceTemplates InvoiceTemplate[]
 
   @@index([slug])
   @@index([status])
@@ -238,8 +257,7 @@ model OrganizationInvoice {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OrganizationInvitation
-// C-1: Stores the hashed invite token so it can be verified when the tenant
-// admin clicks the link. Token is hashed with bcrypt to prevent DB-read attacks.
+// Super Admin → Tenant Admin invite. Token hashed with bcrypt.
 // Consumed (acceptedAt set) on first use. Expires after 48 hours.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -249,7 +267,7 @@ model OrganizationInvitation {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   email      String
-  tokenHash  String    @unique // bcrypt hash of the raw token emailed to the admin
+  tokenHash  String    @unique
   expiresAt  DateTime
   acceptedAt DateTime?
 
@@ -263,7 +281,6 @@ model OrganizationInvitation {
 // ─────────────────────────────────────────────────────────────────────────────
 // UserSession
 // Ephemeral. Hard-deleted on expiry — no soft-delete needed.
-// UUID PK for consistency.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model UserSession {
@@ -271,12 +288,10 @@ model UserSession {
   sessionToken String      @unique
   sessionType  SessionType
 
-  // Super Admin session
   superAdminId String?     @db.Uuid
   superAdmin   SuperAdmin? @relation("SuperAdminSessions", fields: [superAdminId], references: [id])
 
-  // Tenant session
-  organizationId String?      @db.Uuid
+  organizationId String?       @db.Uuid
   organization   Organization? @relation("TenantSessions", fields: [organizationId], references: [id])
   userId         String?       @db.Uuid
 
@@ -290,4 +305,291 @@ model UserSession {
   @@index([superAdminId])
   @@index([organizationId, userId])
   @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Role
+// Mutable domain table. Sync-ready.
+// isSystem roles are seeded per-org and cannot be edited/deleted via UI.
+// permissions: String[] validated against PERMISSION_SLUGS at write time.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Role {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  permissions String[] @default([])
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  users           User[]
+  userInvitations UserInvitation[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, deletedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Department
+// Mutable domain table. Sync-ready. Self-referential for nesting.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Department {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name        String
+  description String?
+
+  // Self-referential hierarchy
+  parentId String?     @db.Uuid
+  parent   Department? @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children Department[] @relation("DeptHierarchy")
+
+  // Optional manager (User)
+  managerId String? @db.Uuid
+  manager   User?   @relation("DeptManager", fields: [managerId], references: [id])
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  users           User[]
+  userInvitations UserInvitation[]
+
+  @@index([organizationId, deletedAt])
+  @@index([parentId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User
+// Core tenant user. Mutable domain table. Sync-ready.
+// email unique per-org: @@unique([organizationId, email]).
+// passwordHash is null until the invitation is accepted.
+// mfaSecret: AES-256-GCM encrypted TOTP secret (Phase 7 MFA implementation).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  roleId String @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  departmentId String?     @db.Uuid
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  email        String
+  passwordHash String?
+  name         String
+  avatar       String?
+  phone        String?
+
+  isActive      Boolean   @default(true)
+  isMfaEnabled  Boolean   @default(false)
+  mfaSecret     String?   // AES-256-GCM encrypted; implementation deferred to Phase 7
+  lastLoginAt   DateTime?
+
+  // Persisted preferences: theme, notification settings, dashboard layout
+  preferences Json @default("{}")
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Back-relations
+  managedDepts    Department[]     @relation("DeptManager")
+  sentInvitations UserInvitation[] @relation("InvitedBy")
+  notifications   Notification[]
+  activityFeed    ActivityFeed[]
+  auditLogs       AuditLog[]       @relation("AuditUser")
+  passwordResets  PasswordResetToken[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId, deletedAt])
+  @@index([roleId])
+  @@index([departmentId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UserInvitation
+// Tenant Admin → Team Member invite. Append-only (no deletedAt).
+// tokenHash: bcrypt hash of the raw token emailed to the invitee.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UserInvitation {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  email      String
+  name       String?
+
+  roleId String @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  departmentId String?     @db.Uuid
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  invitedBy   String @db.Uuid
+  invitedByUser User @relation("InvitedBy", fields: [invitedBy], references: [id])
+
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PasswordResetToken
+// Append-only. 1-hour expiry. usedAt set on first use.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AuditLog (Tenant-scoped)
+// Append-only. No deletedAt, no lastModifiedBy.
+// Captures every CREATE / UPDATE / DELETE / SUSPEND / INVITE mutation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  userId String? @db.Uuid
+  user   User?   @relation("AuditUser", fields: [userId], references: [id])
+
+  action    String  // CREATE | UPDATE | DELETE | SUSPEND | INVITE | LOGIN | BRANDING_CHANGE
+  entity    String  // "User" | "Role" | "Department" | "Organization" etc.
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([entity, entityId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notification
+// System-generated, user-scoped. Mutable (isRead). No lastModifiedBy.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  type   String  // user_invited | role_changed | department_assigned | system
+  title  String
+  body   String
+  data   Json?   // e.g. { entityId, entityType, actionUrl }
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  deletedAt DateTime? // user can dismiss a notification
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, isRead])
+  @@index([organizationId, deletedAt])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ActivityFeed
+// Append-only public org timeline. No deletedAt.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ActivityFeed {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  userId String? @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id])
+
+  type        String
+  title       String
+  body        String?
+  entityType  String?
+  entityId    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InvoiceTemplate
+// Structure only — full invoicing logic in Phase 3. Sync-ready.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model InvoiceTemplate {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name      String
+  isDefault Boolean @default(false)
+
+  headerHtml  String?
+  footerHtml  String?
+  logoUrl     String?
+  primaryColor String?
+
+  taxLabel             String  @default("GST")
+  invoiceNumberPrefix  String  @default("INV")
+  invoiceNumberPadding Int     @default(4)
+
+  bankDetailsEnabled Boolean @default(true)
+  bankDetails        Json?
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([organizationId, deletedAt])
 }

@@ -20,6 +20,8 @@ const TENANT: TenantSession = {
   userId: 'org-1',
   organizationId: 'org-1',
   organization: { id: 'org-1', slug: 'acme', name: 'ACME', status: 'ACTIVE', plan: 'PRO' },
+  role: { id: 'role-1', name: 'Owner', isSystem: true },
+  permissions: ['*'],
   sessionToken: 'st-2',
 }
 

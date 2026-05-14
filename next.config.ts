@@ -20,7 +20,7 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // tighten in Phase 7
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: blob:",
+      `img-src 'self' data: blob: ${process.env.R2_PUBLIC_URL ?? 'https://*.r2.dev'} https://fonts.gstatic.com`,
       "connect-src 'self'",
       "frame-ancestors 'none'",
     ].join('; '),
