@@ -39,11 +39,14 @@ enum SessionType {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Super Admin
+// SuperAdmin
+// Platform-level only. Soft-deleted (deletedAt) to preserve PlatformAuditLog
+// FK integrity when sub-admins are removed.
+// No lastModifiedBy/Device — not a sync table.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model SuperAdmin {
-  id           String         @id @default(cuid())
+  id           String         @id @default(uuid()) @db.Uuid
   email        String         @unique
   passwordHash String
   name         String
@@ -52,54 +55,66 @@ model SuperAdmin {
   avatar       String?
   isActive     Boolean        @default(true)
   lastLoginAt  DateTime?
+  deletedAt    DateTime?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
   auditLogs PlatformAuditLog[]
   sessions  UserSession[]      @relation("SuperAdminSessions")
+
+  @@index([deletedAt])
+  @@index([email])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Platform Settings
+// PlatformSettings
+// Global key-value config. No sync, no soft-delete.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model PlatformSettings {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid()) @db.Uuid
   key       String   @unique
   value     Json
   updatedAt DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Platform Audit Log
+// PlatformAuditLog
+// Append-only. Never deleted. FK to SuperAdmin preserved via soft-delete on SA.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model PlatformAuditLog {
-  id           String   @id @default(cuid())
-  action       String
-  entity       String
-  entityId     String?
-  oldValue     Json?
-  newValue     Json?
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime @default(now())
+  id        String   @id @default(uuid()) @db.Uuid
+  action    String
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
-  superAdminId String
+  superAdminId String     @db.Uuid
   superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id])
+
+  @@index([superAdminId])
+  @@index([entity, entityId])
+  @@index([createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Organization (Tenant)
+// Soft-deleted so cancelled orgs preserve billing history and audit trails.
+// No lastModifiedBy/Device — managed by super admin, not synced to devices.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Organization {
-  id     String    @id @default(cuid())
+  id     String    @id @default(uuid()) @db.Uuid
   slug   String    @unique
   name   String
   status OrgStatus @default(TRIAL)
 
-  // Contact info
+  // Contact
   email      String
   phone      String?
   website    String?
@@ -117,10 +132,10 @@ model Organization {
   logoLight      String?
   logoDark       String?
   favicon        String?
-  primaryColor   String  @default("#6366F1")
-  secondaryColor String  @default("#8B5CF6")
-  accentColor    String  @default("#EC4899")
-  fontFamily     String  @default("Inter")
+  primaryColor   String  @default("#0F172A")
+  secondaryColor String  @default("#334155")
+  accentColor    String  @default("#0369A1")
+  fontFamily     String  @default("Plus Jakarta Sans")
 
   // Locale
   currency        String @default("PKR")
@@ -136,7 +151,7 @@ model Organization {
   subscriptionEnd   DateTime?
   nextBillingDate   DateTime?
   setupFeePaid      Boolean          @default(false)
-  monthlyPrice      Decimal          @default(0)  @db.Decimal(10, 2)
+  monthlyPrice      Decimal          @default(0) @db.Decimal(10, 2)
   customPricing     Boolean          @default(false)
 
   // AI
@@ -155,14 +170,17 @@ model Organization {
   onboardingCompleted Boolean @default(false)
   onboardingStep      Int     @default(0)
 
+  // Admin contact (set after onboarding)
+  adminEmail String?
+  adminName  String?
+
   // Billing contact
   billingEmail String?
   billingName  String?
   billingPhone String?
 
-  // Admin user (set after onboarding)
-  adminEmail String?
-  adminName  String?
+  // Soft delete
+  deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -172,17 +190,19 @@ model Organization {
 
   @@index([slug])
   @@index([status])
+  @@index([deletedAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Organization Invoice (Platform → Tenant billing)
+// OrganizationInvoice (Platform → Tenant billing)
+// Soft-deleted to preserve financial audit trail.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model OrganizationInvoice {
-  id            String @id @default(cuid())
+  id            String @id @default(uuid()) @db.Uuid
   invoiceNumber String @unique
 
-  organizationId String
+  organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   periodStart DateTime
@@ -202,30 +222,36 @@ model OrganizationInvoice {
   notes      String?
   pdfUrl     String?
 
+  // Soft delete
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([organizationId])
+  @@index([organizationId, deletedAt])
   @@index([status])
+  @@index([dueDate])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// User Session (shared for both Super Admin and Tenant users)
+// UserSession
+// Ephemeral. Hard-deleted on expiry — no soft-delete needed.
+// UUID PK for consistency.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model UserSession {
-  id           String      @id @default(cuid())
+  id           String      @id @default(uuid()) @db.Uuid
   sessionToken String      @unique
   sessionType  SessionType
 
   // Super Admin session
-  superAdminId String?
+  superAdminId String?     @db.Uuid
   superAdmin   SuperAdmin? @relation("SuperAdminSessions", fields: [superAdminId], references: [id])
 
   // Tenant session
-  organizationId String?
+  organizationId String?      @db.Uuid
   organization   Organization? @relation("TenantSessions", fields: [organizationId], references: [id])
-  userId         String?
+  userId         String?       @db.Uuid
 
   ipAddress  String?
   userAgent  String?
@@ -236,4 +262,5 @@ model UserSession {
   @@index([sessionToken])
   @@index([superAdminId])
   @@index([organizationId, userId])
+  @@index([expiresAt])
 }
