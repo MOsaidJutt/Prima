@@ -7,8 +7,7 @@ import { requireOwner } from '@/lib/auth/permissions'
 import { sendOrganizationInvite } from '@/lib/email'
 import { nanoid } from 'nanoid'
 
-const INVITE_TTL_HOURS = 48
-const BCRYPT_ROUNDS = 10 // lower than login hash — tokens are long-random, not user passwords
+import { BCRYPT_ROUNDS_TOKEN, INVITE_TTL_HOURS } from '@/lib/constants'
 
 const createOrgSchema = z.object({
   name: z.string().min(2).max(100),
@@ -41,8 +40,9 @@ export async function POST(request: Request) {
     }
 
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-    const inviteToken = nanoid(48) // 48 chars of URL-safe randomness
-    const tokenHash = await bcrypt.hash(inviteToken, BCRYPT_ROUNDS)
+    const inviteToken = nanoid(48)
+    const tokenPrefix = inviteToken.slice(0, 8)
+    const tokenHash = await bcrypt.hash(inviteToken, BCRYPT_ROUNDS_TOKEN)
     const inviteExpiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000)
 
     // C-1: org + invitation created atomically
@@ -67,6 +67,7 @@ export async function POST(request: Request) {
           organizationId: created.id,
           email: data.email,
           tokenHash,
+          tokenPrefix,
           expiresAt: inviteExpiresAt,
         },
       })

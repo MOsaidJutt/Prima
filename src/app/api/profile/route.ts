@@ -7,7 +7,12 @@ import { TenantScopedRepository } from '@/lib/tenant-context'
 const profileSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   phone: z.string().max(20).optional().nullable(),
-  avatar: z.string().url().optional().nullable(),
+  avatar: z
+    .string()
+    .url()
+    .refine((u) => u.startsWith('https://'), 'Avatar URL must use https://')
+    .optional()
+    .nullable(),
   preferences: z
     .object({
       theme: z.enum(['light', 'dark', 'system']).optional(),

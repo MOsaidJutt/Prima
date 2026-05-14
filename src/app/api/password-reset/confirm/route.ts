@@ -3,6 +3,7 @@ import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
+import { BCRYPT_ROUNDS_PASSWORD } from '@/lib/constants'
 
 const schema = z.object({
   token: z.string().min(1),
@@ -18,13 +19,12 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { token, password } = schema.parse(body)
 
+    const tokenPrefix = token.slice(0, 8)
     const candidates = await prisma.passwordResetToken.findMany({
-      where: { usedAt: null, expiresAt: { gt: new Date() } },
+      where: { tokenPrefix, usedAt: null, expiresAt: { gt: new Date() } },
       include: {
         user: { select: { id: true, organizationId: true, email: true, deletedAt: true } },
       },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
     })
 
     let matched: (typeof candidates)[number] | null = null
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid or expired reset link.' }, { status: 400 })
     }
 
-    const hash = await bcrypt.hash(password, 12)
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS_PASSWORD)
 
     await prisma.$transaction([
       prisma.passwordResetToken.update({

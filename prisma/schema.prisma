@@ -266,16 +266,18 @@ model OrganizationInvitation {
   organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  email      String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  acceptedAt DateTime?
+  email       String
+  tokenHash   String   @unique
+  tokenPrefix String   @db.VarChar(8) // first 8 chars of raw token — pre-filter before bcrypt.compare()
+  expiresAt   DateTime
+  acceptedAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([expiresAt])
+  @@index([tokenPrefix])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -445,18 +447,20 @@ model UserInvitation {
   departmentId String?     @db.Uuid
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  invitedBy   String @db.Uuid
-  invitedByUser User @relation("InvitedBy", fields: [invitedBy], references: [id])
+  invitedBy    String @db.Uuid
+  invitedByUser User  @relation("InvitedBy", fields: [invitedBy], references: [id])
 
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  acceptedAt DateTime?
+  tokenHash   String   @unique
+  tokenPrefix String   @db.VarChar(8) // first 8 chars of raw token — pre-filter before bcrypt.compare()
+  expiresAt   DateTime
+  acceptedAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([expiresAt])
+  @@index([tokenPrefix])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -465,16 +469,18 @@ model UserInvitation {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model PasswordResetToken {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id])
-  tokenHash String   @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id])
+  tokenHash   String    @unique
+  tokenPrefix String    @db.VarChar(8) // first 8 chars of raw token — pre-filter before bcrypt.compare()
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([tokenPrefix])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -500,6 +506,7 @@ model AuditLog {
   userAgent String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt // Always equals createdAt (append-only); required by PowerSync sync protocol
 
   @@index([organizationId, createdAt])
   @@index([entity, entityId])
@@ -556,6 +563,7 @@ model ActivityFeed {
   entityId    String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt // Always equals createdAt (append-only); required by PowerSync sync protocol
 
   @@index([organizationId, createdAt])
 }

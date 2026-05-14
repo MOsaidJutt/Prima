@@ -26,43 +26,48 @@ const orgSchema = z.object({
 })
 
 export async function GET(_req: Request) {
-  const auth = await requireTenantAuth('organization:read')
-  if (!auth.ok) return auth.response
-  const { organizationId } = auth.session
+  try {
+    const auth = await requireTenantAuth('organization:read')
+    if (!auth.ok) return auth.response
+    const { organizationId } = auth.session
 
-  const org = await prisma.organization.findFirst({
-    where: { id: organizationId, deletedAt: null },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      status: true,
-      plan: true,
-      email: true,
-      phone: true,
-      website: true,
-      address: true,
-      city: true,
-      state: true,
-      country: true,
-      postalCode: true,
-      ntn: true,
-      strn: true,
-      currency: true,
-      locale: true,
-      timezone: true,
-      dateFormat: true,
-      fiscalYearStart: true,
-      billingEmail: true,
-      billingName: true,
-      billingPhone: true,
-      trialEndsAt: true,
-      nextBillingDate: true,
-    },
-  })
+    const org = await prisma.organization.findFirst({
+      where: { id: organizationId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        plan: true,
+        email: true,
+        phone: true,
+        website: true,
+        address: true,
+        city: true,
+        state: true,
+        country: true,
+        postalCode: true,
+        ntn: true,
+        strn: true,
+        currency: true,
+        locale: true,
+        timezone: true,
+        dateFormat: true,
+        fiscalYearStart: true,
+        billingEmail: true,
+        billingName: true,
+        billingPhone: true,
+        trialEndsAt: true,
+        nextBillingDate: true,
+      },
+    })
 
-  if (!org) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true, data: org })
+    if (!org) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ success: true, data: org })
+  } catch (err) {
+    console.error('[organization GET]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 }
 
 export async function PATCH(req: Request) {

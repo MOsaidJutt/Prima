@@ -13,18 +13,27 @@ const roleSchema = z.object({
 })
 
 export async function GET(_req: Request) {
-  const auth = await requireTenantAuth('roles:read')
-  if (!auth.ok) return auth.response
+  try {
+    const auth = await requireTenantAuth('roles:read')
+    if (!auth.ok) return auth.response
 
-  const { organizationId } = auth.session
+    const { organizationId } = auth.session
 
-  const roles = await prisma.role.findMany({
-    where: { organizationId, deletedAt: null },
-    include: { _count: { select: { users: true } } },
-    orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
-  })
+    const [roles, total] = await Promise.all([
+      prisma.role.findMany({
+        where: { organizationId, deletedAt: null },
+        include: { _count: { select: { users: true } } },
+        orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
+        take: 200,
+      }),
+      prisma.role.count({ where: { organizationId, deletedAt: null } }),
+    ])
 
-  return NextResponse.json({ success: true, data: roles })
+    return NextResponse.json({ success: true, data: roles, total })
+  } catch (err) {
+    console.error('[roles GET]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 }
 
 export async function POST(req: Request) {

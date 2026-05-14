@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { requireTenantAuth } from '@/lib/auth/require-tenant-auth'
 import { createAuditLog } from '@/lib/audit'
+import { BCRYPT_ROUNDS_PASSWORD } from '@/lib/constants'
 
 const schema = z.object({
   currentPassword: z.string().min(1),
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
     if (!valid)
       return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 400 })
 
-    const hash = await bcrypt.hash(newPassword, 12)
+    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS_PASSWORD)
     await prisma.user.update({
       where: { id: userId },
       data: { passwordHash: hash, lastModifiedBy: userId },

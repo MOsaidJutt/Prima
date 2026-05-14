@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { tenantLogin } from '@/lib/auth/actions'
+// tenantLogin server action is kept as fallback; the API route at /api/auth/login
+// is the rate-limited canonical path used by the browser form below.
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,12 +21,17 @@ export default function TenantLoginPage() {
     e.preventDefault()
     setLoading(true)
     try {
-      const result = await tenantLogin(email, password)
-      if (result?.error) {
-        toast.error(result.error)
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const result = await res.json()
+      if (!res.ok) {
+        toast.error(result.error ?? 'Invalid credentials')
         return
       }
-      if (result?.onboardingCompleted === false) {
+      if (result.onboardingCompleted === false) {
         router.push('/onboarding')
       } else {
         router.push('/admin')

@@ -7,8 +7,7 @@ import { requireTenantAuth } from '@/lib/auth/require-tenant-auth'
 import { sendUserInvite } from '@/lib/email'
 import { createAuditLog } from '@/lib/audit'
 import { createNotification } from '@/lib/notifications'
-
-const INVITE_TTL_HOURS = 48
+import { BCRYPT_ROUNDS_TOKEN, INVITE_TTL_HOURS } from '@/lib/constants'
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -58,7 +57,8 @@ export async function POST(req: Request) {
     }
 
     const rawToken = nanoid(48)
-    const tokenHash = await bcrypt.hash(rawToken, 10)
+    const tokenPrefix = rawToken.slice(0, 8)
+    const tokenHash = await bcrypt.hash(rawToken, BCRYPT_ROUNDS_TOKEN)
     const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000)
 
     await prisma.userInvitation.create({
@@ -70,6 +70,7 @@ export async function POST(req: Request) {
         departmentId: data.departmentId ?? null,
         invitedBy: userId,
         tokenHash,
+        tokenPrefix,
         expiresAt,
       },
     })

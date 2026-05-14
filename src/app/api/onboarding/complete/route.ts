@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import bcrypt from 'bcryptjs'
+import { nanoid } from 'nanoid'
 import { prisma } from '@/lib/prisma'
 import { getTenantSession } from '@/lib/auth/session'
 import { createAuditLog } from '@/lib/audit'
+import { sendUserInvite } from '@/lib/email'
+import { BCRYPT_ROUNDS_TOKEN } from '@/lib/constants'
 
 const completeSchema = z.object({
   name: z.string().min(2).max(100),
@@ -25,31 +29,53 @@ const completeSchema = z.object({
 })
 
 export async function POST(request: Request) {
-  const session = await getTenantSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { organizationId, userId } = session
-
-  const org = await prisma.organization.findFirst({
-    where: { id: organizationId, deletedAt: null },
-  })
-  if (!org) return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
-  if (org.onboardingCompleted) {
-    return NextResponse.json({ error: 'Onboarding already completed' }, { status: 400 })
-  }
-
   try {
+    const session = await getTenantSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { organizationId, userId } = session
+
+    const org = await prisma.organization.findFirst({
+      where: { id: organizationId, deletedAt: null },
+    })
+    if (!org) return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
+    if (org.onboardingCompleted) {
+      return NextResponse.json({ error: 'Onboarding already completed' }, { status: 400 })
+    }
+
     const body = await request.json()
     const data = completeSchema.parse(body)
 
-    // Look up Sales Rep role for onboarding invites
     const salesRepRole = await prisma.role.findFirst({
       where: { organizationId, name: 'Sales Rep', deletedAt: null },
       select: { id: true },
     })
 
+    // Prepare invitations outside the transaction — bcrypt is CPU-bound and slow;
+    // running it inside a transaction ties up the DB connection unnecessarily (M-8).
+    type PendingInvite = { email: string; rawToken: string; tokenHash: string; tokenPrefix: string }
+    const pendingInvites: PendingInvite[] = []
+
+    if (data.inviteEmails && salesRepRole && userId !== organizationId) {
+      const emails = data.inviteEmails
+        .split('\n')
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e.includes('@'))
+
+      for (const email of emails) {
+        const existing = await prisma.user.findFirst({
+          where: { organizationId, email, deletedAt: null },
+        })
+        if (!existing) {
+          const rawToken = nanoid(48)
+          const tokenPrefix = rawToken.slice(0, 8)
+          const tokenHash = await bcrypt.hash(rawToken, BCRYPT_ROUNDS_TOKEN)
+          pendingInvites.push({ email, rawToken, tokenHash, tokenPrefix })
+        }
+      }
+    }
+
     await prisma.$transaction(async (tx) => {
-      // Update org profile + branding
       await tx.organization.update({
         where: { id: organizationId },
         data: {
@@ -67,55 +93,39 @@ export async function POST(request: Request) {
         },
       })
 
-      // Create first department
       if (data.departmentName) {
         await tx.department.create({
           data: {
             organizationId,
             name: data.departmentName,
-            managerId: userId !== organizationId ? userId : null, // skip if Phase 0 placeholder
+            managerId: userId !== organizationId ? userId : null,
             lastModifiedBy: userId,
           },
         })
       }
 
-      // Create invitations for onboarding invite emails (bulk, Sales Rep role default)
-      if (data.inviteEmails && salesRepRole) {
-        const emails = data.inviteEmails
-          .split('\n')
-          .map((e) => e.trim().toLowerCase())
-          .filter((e) => e.includes('@'))
-
-        // Only invite if user doesn't already exist in org
-        for (const email of emails) {
-          const existing = await tx.user.findFirst({
-            where: { organizationId, email, deletedAt: null },
-          })
-          if (!existing && userId !== organizationId) {
-            const { nanoid } = await import('nanoid')
-            const { default: bcrypt } = await import('bcryptjs')
-            const raw = nanoid(48)
-            const tokenHash = await bcrypt.hash(raw, 10)
-            await tx.userInvitation.create({
-              data: {
-                organizationId,
-                email,
-                roleId: salesRepRole.id,
-                invitedBy: userId,
-                tokenHash,
-                expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-              },
-            })
-            // Fire-and-forget email (non-blocking)
-            import('@/lib/email').then(({ sendUserInvite }) => {
-              sendUserInvite({ to: email, orgName: data.name, inviteToken: raw }).catch(
-                (err: unknown) => console.error('[invite-email]', err)
-              )
-            })
-          }
-        }
+      if (pendingInvites.length > 0 && salesRepRole) {
+        await tx.userInvitation.createMany({
+          data: pendingInvites.map((inv) => ({
+            organizationId,
+            email: inv.email,
+            roleId: salesRepRole.id,
+            invitedBy: userId,
+            tokenHash: inv.tokenHash,
+            tokenPrefix: inv.tokenPrefix,
+            expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+          })),
+          skipDuplicates: true,
+        })
       }
     })
+
+    // Fire-and-forget emails after transaction committed
+    for (const inv of pendingInvites) {
+      sendUserInvite({ to: inv.email, orgName: data.name, inviteToken: inv.rawToken }).catch(
+        (err: unknown) => console.error('[onboarding-invite-email]', err)
+      )
+    }
 
     await createAuditLog({
       organizationId,

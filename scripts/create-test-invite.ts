@@ -26,6 +26,7 @@ async function main() {
   })
 
   const tokenHash = await bcrypt.hash(TEST_TOKEN, 10)
+  const tokenPrefix = TEST_TOKEN.slice(0, 8)
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000)
 
   await prisma.organizationInvitation.create({
@@ -33,6 +34,7 @@ async function main() {
       organizationId: org.id,
       email: org.adminEmail ?? org.email,
       tokenHash,
+      tokenPrefix,
       expiresAt,
     },
   })

@@ -33,7 +33,7 @@ vi.mock('next/navigation', () => ({
 import { superAdminLogin } from '@/lib/auth/actions'
 import bcrypt from 'bcryptjs'
 
-const BCRYPT_ROUNDS = 12
+import { BCRYPT_ROUNDS_PASSWORD as BCRYPT_ROUNDS } from '@/lib/constants'
 
 describe('superAdminLogin', () => {
   const validHash = bcrypt.hashSync('ValidPass@1', BCRYPT_ROUNDS)

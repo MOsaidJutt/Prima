@@ -5,8 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { createTenantToken, setSessionCookie } from '@/lib/auth/session'
 import { createAuditLog } from '@/lib/audit'
 import { cookies } from 'next/headers'
-
-const BCRYPT_ROUNDS = 12
+import { BCRYPT_ROUNDS_PASSWORD } from '@/lib/constants'
 
 const acceptSchema = z.object({
   token: z.string().min(1),
@@ -23,17 +22,18 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { token, name, password } = acceptSchema.parse(body)
 
-    // Scan recent non-accepted invitations for matching hash
+    // Pre-filter by tokenPrefix (O(1) indexed lookup) before running bcrypt.compare()
+    // This eliminates the brute-force amplification vector where each request could
+    // trigger up to 100 bcrypt comparisons against all pending invitations.
+    const tokenPrefix = token.slice(0, 8)
     const candidates = await prisma.userInvitation.findMany({
-      where: { acceptedAt: null, expiresAt: { gt: new Date() } },
+      where: { tokenPrefix, acceptedAt: null, expiresAt: { gt: new Date() } },
       include: {
         organization: {
           select: { id: true, slug: true, name: true, status: true, plan: true, deletedAt: true },
         },
         role: true,
       },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
     })
 
     let matched: (typeof candidates)[number] | null = null
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS_PASSWORD)
 
     const newUser = await prisma.$transaction(async (tx) => {
       await tx.userInvitation.update({

@@ -5,8 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { createTenantToken, setSessionCookie } from '@/lib/auth/session'
 import { DEFAULT_ROLES } from '@/lib/permissions'
 import { cookies } from 'next/headers'
-
-const BCRYPT_ROUNDS = 12
+import { BCRYPT_ROUNDS_PASSWORD } from '@/lib/constants'
 
 const acceptSchema = z.object({
   token: z.string().min(1),
@@ -22,9 +21,10 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { token, password } = acceptSchema.parse(body)
 
-    // Find all non-expired, non-accepted invitations and compare token hashes.
+    // Pre-filter by tokenPrefix (indexed) then run bcrypt.compare() on ≤1–2 candidates.
+    const tokenPrefix = token.slice(0, 8)
     const candidates = await prisma.organizationInvitation.findMany({
-      where: { acceptedAt: null, expiresAt: { gt: new Date() } },
+      where: { tokenPrefix, acceptedAt: null, expiresAt: { gt: new Date() } },
       include: {
         organization: {
           select: {
@@ -39,8 +39,6 @@ export async function POST(request: Request) {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
     })
 
     let matched: (typeof candidates)[number] | null = null
@@ -63,7 +61,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'This organization has been cancelled.' }, { status: 400 })
     }
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS_PASSWORD)
 
     // Create default system roles + Owner user in a transaction
     const result = await prisma.$transaction(async (tx) => {

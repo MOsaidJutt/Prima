@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Shield, FolderOpen, Palette, Building, ClipboardList, FileText } from 'lucide-react'
+import { Shield, FolderOpen, Palette, Building, ClipboardList } from 'lucide-react'
 
+// InvoiceTemplate link removed — route does not exist until Phase 3.
 const SETTINGS_SECTIONS = [
   {
     href: '/admin/settings/roles',
@@ -32,12 +33,6 @@ const SETTINGS_SECTIONS = [
     icon: ClipboardList,
     title: 'Audit Log',
     description: 'Full history of all mutations with old/new value diffs',
-  },
-  {
-    href: '/admin/settings/invoice-templates',
-    icon: FileText,
-    title: 'Invoice Templates',
-    description: 'Build invoice layouts and number formats (Phase 3)',
   },
 ]
 

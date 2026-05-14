@@ -21,29 +21,34 @@ const brandingSchema = z.object({
 })
 
 export async function GET(_req: Request) {
-  const auth = await requireTenantAuth('organization:read')
-  if (!auth.ok) return auth.response
-  const { organizationId } = auth.session
+  try {
+    const auth = await requireTenantAuth('organization:read')
+    if (!auth.ok) return auth.response
+    const { organizationId } = auth.session
 
-  const org = await prisma.organization.findFirst({
-    where: { id: organizationId, deletedAt: null },
-    select: {
-      logoLight: true,
-      logoDark: true,
-      favicon: true,
-      primaryColor: true,
-      secondaryColor: true,
-      accentColor: true,
-      fontFamily: true,
-      emailBannerUrl: true,
-      emailFooterText: true,
-      loginCustomText: true,
-      loginBgImage: true,
-    },
-  })
+    const org = await prisma.organization.findFirst({
+      where: { id: organizationId, deletedAt: null },
+      select: {
+        logoLight: true,
+        logoDark: true,
+        favicon: true,
+        primaryColor: true,
+        secondaryColor: true,
+        accentColor: true,
+        fontFamily: true,
+        emailBannerUrl: true,
+        emailFooterText: true,
+        loginCustomText: true,
+        loginBgImage: true,
+      },
+    })
 
-  if (!org) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true, data: org })
+    if (!org) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ success: true, data: org })
+  } catch (err) {
+    console.error('[branding GET]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 }
 
 export async function PUT(req: Request) {

@@ -77,25 +77,55 @@ export async function PATCH(req: Request) {
     const data = bulkSchema.parse(body)
 
     let updateData: Record<string, unknown> = {}
-    if (data.action === 'deactivate') updateData = { isActive: false }
-    else if (data.action === 'activate') updateData = { isActive: true }
-    else if (data.action === 'change_role' && data.roleId) updateData = { roleId: data.roleId }
+    if (data.action === 'deactivate') {
+      updateData = { isActive: false }
+    } else if (data.action === 'activate') {
+      updateData = { isActive: true }
+    } else if (data.action === 'change_role') {
+      if (!data.roleId) {
+        return NextResponse.json(
+          { error: 'roleId is required for change_role action' },
+          { status: 400 }
+        )
+      }
+      // Verify the role belongs to this organization — prevents cross-org privilege escalation
+      const role = await prisma.role.findFirst({
+        where: { id: data.roleId, organizationId, deletedAt: null },
+      })
+      if (!role) {
+        return NextResponse.json({ error: 'Role not found' }, { status: 404 })
+      }
+      updateData = { roleId: data.roleId }
+    }
+
+    // Fetch before-state for each affected user so audit diffs are meaningful
+    const beforeUsers = await prisma.user.findMany({
+      where: { id: { in: data.ids }, organizationId, deletedAt: null },
+      select: { id: true, isActive: true, roleId: true },
+    })
 
     await prisma.user.updateMany({
       where: { id: { in: data.ids }, organizationId, deletedAt: null },
       data: { ...updateData, lastModifiedBy: userId },
     })
 
-    await createAuditLog({
-      organizationId,
-      userId,
-      action: 'UPDATE',
-      entity: 'User',
-      newValue: { bulkAction: data.action, affectedIds: data.ids },
-      req,
-    })
+    // Write one audit entry per affected user for granular history (M-7)
+    await Promise.all(
+      beforeUsers.map((u) =>
+        createAuditLog({
+          organizationId,
+          userId,
+          action: 'UPDATE',
+          entity: 'User',
+          entityId: u.id,
+          oldValue: { isActive: u.isActive, roleId: u.roleId },
+          newValue: { ...updateData, bulkAction: data.action },
+          req,
+        })
+      )
+    )
 
-    return NextResponse.json({ success: true, affected: data.ids.length })
+    return NextResponse.json({ success: true, affected: beforeUsers.length })
   } catch (err) {
     if (err instanceof z.ZodError)
       return NextResponse.json({ error: err.errors[0].message }, { status: 400 })
