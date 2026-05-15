@@ -4,7 +4,7 @@ import { cacheGet, cacheSet, dashboardKey } from '@/lib/dashboard-cache'
 import { startOfMonth, endOfDay } from 'date-fns'
 
 export async function GET(req: Request) {
-  return withTenantApi(req, null, async ({ ctx, user }) => {
+  return withTenantApi(req, 'dashboard:read', async ({ ctx, user }) => {
     const orgId = ctx.organizationId
     const managerId = user.id
     const url = new URL(req.url)

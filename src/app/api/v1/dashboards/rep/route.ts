@@ -1,10 +1,10 @@
 import { withTenantApi } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
 import { cacheGet, cacheSet, dashboardKey } from '@/lib/dashboard-cache'
-import { subMonths, startOfMonth, format, startOfDay, endOfDay } from 'date-fns'
+import { subMonths, startOfMonth, format, endOfDay } from 'date-fns'
 
 export async function GET(req: Request) {
-  return withTenantApi(req, null, async ({ ctx, user }) => {
+  return withTenantApi(req, 'dashboard:read', async ({ ctx, user }) => {
     const orgId = ctx.organizationId
     const userId = user.id
     const url = new URL(req.url)

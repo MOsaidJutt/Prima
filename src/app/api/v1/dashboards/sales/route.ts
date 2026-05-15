@@ -1,8 +1,7 @@
-import { NextResponse } from 'next/server'
 import { withTenantApi } from '@/lib/api-helpers'
-import { prisma } from '@/lib/prisma'
+import { prisma, Prisma } from '@/lib/prisma'
 import { cacheGet, cacheSet, dashboardKey } from '@/lib/dashboard-cache'
-import { subMonths, startOfMonth, endOfMonth, format, startOfDay, endOfDay } from 'date-fns'
+import { format, startOfMonth, endOfDay } from 'date-fns'
 
 export async function GET(req: Request) {
   return withTenantApi(req, 'dashboard:read', async ({ ctx }) => {
@@ -48,7 +47,6 @@ export async function GET(req: Request) {
       totalUnits,
       visitTypeDist,
       revenueByRep,
-      revenueByCategory,
       dailyRevenue,
       topClients,
     ] = await Promise.all([
@@ -74,29 +72,26 @@ export async function GET(req: Request) {
         orderBy: { _sum: { grandTotal: 'desc' } },
         take: 8,
       }),
-      prisma.invoiceLineItem.groupBy({
-        by: ['productId'],
-        where: {
-          invoice: whereInvoice,
-          productId: { not: null },
-        },
-        _sum: { lineTotal: true },
-        orderBy: { _sum: { lineTotal: 'desc' } },
-        take: 6,
-      }),
-      // Daily revenue last 30 days
-      Promise.all(
-        Array.from({ length: 30 }).map(async (_, i) => {
-          const d = new Date(to)
-          d.setDate(d.getDate() - (29 - i))
-          const s = startOfDay(d)
-          const e = endOfDay(d)
-          const agg = await prisma.invoice.aggregate({
-            where: { ...whereInvoice, issueDate: { gte: s, lte: e } },
-            _sum: { grandTotal: true },
-          })
-          return { name: format(d, 'dd MMM'), revenue: Number(agg._sum.grandTotal ?? 0) }
-        })
+      // H-2: single GROUP BY DATE query replacing 30 sequential aggregates
+      prisma.$queryRaw<{ date: Date; revenue: string }[]>(
+        userId
+          ? Prisma.sql`
+              SELECT DATE("issueDate") AS date, SUM("grandTotal")::text AS revenue
+              FROM "Invoice"
+              WHERE "organizationId" = ${orgId}::uuid
+                AND "issueDate" >= ${from} AND "issueDate" <= ${to}
+                AND "deletedAt" IS NULL
+                AND "createdById" = ${userId}::uuid
+              GROUP BY DATE("issueDate")
+              ORDER BY DATE("issueDate")`
+          : Prisma.sql`
+              SELECT DATE("issueDate") AS date, SUM("grandTotal")::text AS revenue
+              FROM "Invoice"
+              WHERE "organizationId" = ${orgId}::uuid
+                AND "issueDate" >= ${from} AND "issueDate" <= ${to}
+                AND "deletedAt" IS NULL
+              GROUP BY DATE("issueDate")
+              ORDER BY DATE("issueDate")`
       ),
       prisma.invoice.groupBy({
         by: ['clientId'],
@@ -125,6 +120,18 @@ export async function GET(req: Request) {
         })
       : []
 
+    // Build a full 30-day series filling zeros for days with no invoices
+    const dailyRevenueRows = dailyRevenue as { date: Date; revenue: string }[]
+    const revenueByDate = Object.fromEntries(
+      dailyRevenueRows.map((r) => [format(new Date(r.date), 'dd MMM'), Number(r.revenue)])
+    )
+    const fullDailyRevenue = Array.from({ length: 30 }).map((_, i) => {
+      const d = new Date(to)
+      d.setDate(d.getDate() - (29 - i))
+      const label = format(d, 'dd MMM')
+      return { name: label, revenue: revenueByDate[label] ?? 0 }
+    })
+
     const data = {
       kpis: {
         totalRevenue: Number(totalRevenue._sum.grandTotal ?? 0),
@@ -134,7 +141,7 @@ export async function GET(req: Request) {
         newClients,
         totalUnits: totalUnits._sum.quantity ?? 0,
       },
-      dailyRevenue,
+      dailyRevenue: fullDailyRevenue,
       visitTypeDist: visitTypeDist.map((v) => ({ name: v.visitType, value: v._count })),
       revenueByRep: revenueByRep.map((r, i) => {
         const u = repUsers.find((u) => u.id === r.createdById)

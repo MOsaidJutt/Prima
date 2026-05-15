@@ -1,5 +1,5 @@
 import { withTenantApi } from '@/lib/api-helpers'
-import { prisma } from '@/lib/prisma'
+import { prisma, Prisma } from '@/lib/prisma'
 import { cacheGet, cacheSet, dashboardKey } from '@/lib/dashboard-cache'
 
 export async function GET(req: Request) {
@@ -57,36 +57,52 @@ export async function GET(req: Request) {
         }),
       ])
 
-    // Low stock: products at or below their reorder level
-    const allProducts = await prisma.product.findMany({
-      where,
-      include: { inventoryStock: { select: { quantity: true } } },
-      take: 100,
-    })
-    const lowStockList = allProducts
-      .map((p) => {
-        const total = p.inventoryStock.reduce((s, i) => s + i.quantity, 0)
-        return { id: p.id, sku: p.sku, name: p.name, quantity: total, reorderLevel: p.reorderLevel }
-      })
-      .filter((p) => p.quantity <= p.reorderLevel)
-      .sort((a, b) => a.quantity - b.quantity)
-      .slice(0, 10)
-
-    // Stock by category
-    const categories = await prisma.productCategory.findMany({
-      where: { organizationId: orgId, deletedAt: null },
-      select: { id: true, name: true },
-    })
-
-    const stockByCat = await Promise.all(
-      categories.map(async (cat) => {
-        const agg = await prisma.inventoryStock.aggregate({
-          where: { organizationId: orgId, product: { categoryId: cat.id, deletedAt: null } },
-          _sum: { quantity: true },
-        })
-        return { name: cat.name, value: Number(agg._sum.quantity ?? 0) }
-      })
+    // M-4: SQL aggregate for low-stock — scales to any catalog size without loading rows
+    const lowStockRaw = await prisma.$queryRaw<
+      { id: string; sku: string; name: string; reorderLevel: number; quantity: string }[]
+    >(
+      categoryId
+        ? Prisma.sql`
+            SELECT p.id, p.sku, p.name, p."reorderLevel",
+                   COALESCE(SUM(s.quantity), 0)::text AS quantity
+            FROM "Product" p
+            LEFT JOIN "InventoryStock" s ON s."productId" = p.id
+            WHERE p."organizationId" = ${orgId}::uuid
+              AND p."deletedAt" IS NULL
+              AND p.status = 'ACTIVE'
+              AND p."categoryId" = ${categoryId}::uuid
+            GROUP BY p.id, p.sku, p.name, p."reorderLevel"
+            HAVING COALESCE(SUM(s.quantity), 0) <= p."reorderLevel"
+            ORDER BY COALESCE(SUM(s.quantity), 0) ASC
+            LIMIT 10`
+        : Prisma.sql`
+            SELECT p.id, p.sku, p.name, p."reorderLevel",
+                   COALESCE(SUM(s.quantity), 0)::text AS quantity
+            FROM "Product" p
+            LEFT JOIN "InventoryStock" s ON s."productId" = p.id
+            WHERE p."organizationId" = ${orgId}::uuid
+              AND p."deletedAt" IS NULL
+              AND p.status = 'ACTIVE'
+            GROUP BY p.id, p.sku, p.name, p."reorderLevel"
+            HAVING COALESCE(SUM(s.quantity), 0) <= p."reorderLevel"
+            ORDER BY COALESCE(SUM(s.quantity), 0) ASC
+            LIMIT 10`
     )
+    const lowStockList = lowStockRaw.map((r) => ({ ...r, quantity: Number(r.quantity) }))
+
+    // Stock by category — single join query instead of N+1 per-category aggregates
+    const stockByCatRaw = await prisma.$queryRaw<{ name: string; value: string }[]>(
+      Prisma.sql`
+        SELECT c.name, COALESCE(SUM(s.quantity), 0)::text AS value
+        FROM "ProductCategory" c
+        LEFT JOIN "Product" p ON p."categoryId" = c.id AND p."deletedAt" IS NULL AND p.status = 'ACTIVE'
+        LEFT JOIN "InventoryStock" s ON s."productId" = p.id
+        WHERE c."organizationId" = ${orgId}::uuid AND c."deletedAt" IS NULL
+        GROUP BY c.id, c.name
+        ORDER BY c.name
+      `
+    )
+    const stockByCat = stockByCatRaw.map((r) => ({ name: r.name, value: Number(r.value) }))
 
     const data = {
       kpis: {

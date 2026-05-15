@@ -60,7 +60,11 @@ export async function POST(req: Request) {
       const valid = await bcrypt.compare(password, user.passwordHash)
       if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
 
-      await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      // H-6: include organizationId for defense-in-depth (safe to add; id is already verified)
+      await prisma.user.update({
+        where: { id: user.id, organizationId: org.id },
+        data: { lastLoginAt: new Date() },
+      })
 
       const token = await createTenantToken({
         type: 'tenant',

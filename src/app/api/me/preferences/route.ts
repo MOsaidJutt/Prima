@@ -35,6 +35,8 @@ export async function PATCH(req: Request) {
 
   await prisma.user.update({
     where: { id: auth.user.id },
+    // L-1: Prisma's generated Json type rejects plain Record<string,unknown> due to
+    // InputJsonValue strictness — the cast is safe because PostgreSQL JSONB accepts any object.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: { preferences: merged as any },
   })

@@ -64,6 +64,19 @@ function getIP(req: Request): string {
 // If Upstash is not configured (e.g. local dev without Redis), rate limiting
 // is skipped with a warning rather than blocking all requests.
 
+// IP-based overload: used by server actions that don't have a Request object.
+export async function checkLoginRateLimitByIP(ip: string): Promise<{ error: string } | null> {
+  if (!isUpstashConfigured()) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[rate-limit] UPSTASH not set — login rate limiting disabled in production')
+    }
+    return null
+  }
+  const { success } = await getLoginLimiter().limit(ip)
+  if (!success) return { error: 'Too many login attempts. Please wait a minute and try again.' }
+  return null
+}
+
 export async function checkLoginRateLimit(req: Request): Promise<NextResponse | null> {
   if (!isUpstashConfigured()) {
     if (process.env.NODE_ENV === 'production') {

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getTenantSession } from '@/lib/auth/session'
+import { requireTenantAuth } from '@/lib/auth/require-tenant-auth'
 import { getUploadUrl } from '@/lib/r2'
 import { nanoid } from 'nanoid'
 
 export async function POST(req: NextRequest) {
-  const session = await getTenantSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // H-4: requireTenantAuth includes per-user rate limiting via checkApiRateLimit
+  const auth = await requireTenantAuth()
+  if (!auth.ok) return auth.response
+  const { organizationId } = auth.session
 
   try {
     const { filename, contentType, sizeBytes } = await req.json()
@@ -20,7 +22,7 @@ export async function POST(req: NextRequest) {
     }
 
     const ext = filename.split('.').pop() ?? 'jpg'
-    const key = `products/${session.organizationId}/${nanoid()}.${ext}`
+    const key = `products/${organizationId}/${nanoid()}.${ext}`
 
     const { uploadUrl, publicUrl } = await getUploadUrl({
       key,

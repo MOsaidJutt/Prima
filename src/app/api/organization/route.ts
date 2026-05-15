@@ -79,6 +79,21 @@ export async function PATCH(req: Request) {
     const body = await req.json()
     const data = orgSchema.parse(body)
 
+    // H-3: capture old value before update for audit diff
+    const before = await prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: {
+        name: true,
+        phone: true,
+        website: true,
+        city: true,
+        country: true,
+        currency: true,
+        locale: true,
+        timezone: true,
+      },
+    })
+
     await prisma.organization.update({
       where: { id: organizationId },
       data: { ...data, updatedAt: new Date() },
@@ -90,6 +105,7 @@ export async function PATCH(req: Request) {
       action: 'UPDATE',
       entity: 'Organization',
       entityId: organizationId,
+      oldValue: before ?? undefined,
       newValue: data,
       req,
     })

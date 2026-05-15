@@ -3,8 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-// tenantLogin server action is kept as fallback; the API route at /api/auth/login
-// is the rate-limited canonical path used by the browser form below.
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'

@@ -1,7 +1,7 @@
 import { withTenantApi } from '@/lib/api-helpers'
-import { prisma } from '@/lib/prisma'
+import { prisma, Prisma } from '@/lib/prisma'
 import { cacheGet, cacheSet, dashboardKey } from '@/lib/dashboard-cache'
-import { subMonths, startOfMonth, endOfMonth, format, startOfDay, endOfDay } from 'date-fns'
+import { subMonths, startOfMonth, format, endOfDay } from 'date-fns'
 
 export async function GET(req: Request) {
   return withTenantApi(req, 'dashboard:read', async ({ ctx }) => {
@@ -69,58 +69,82 @@ export async function GET(req: Request) {
         }),
       ])
 
-    // AR Aging buckets (overdue invoices split by days overdue)
-    const overdueAll = await prisma.invoice.findMany({
-      where: {
-        organizationId: orgId,
-        status: { in: ['OVERDUE', 'ISSUED', 'PARTIALLY_PAID'] },
-        deletedAt: null,
-      },
-      select: { grandTotal: true, paidAmount: true, dueDate: true },
-    })
-
-    const aging = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 }
-    for (const inv of overdueAll) {
-      if (!inv.dueDate) continue
-      const daysOverdue = Math.floor((now.getTime() - inv.dueDate.getTime()) / 86400000)
-      const outstanding = Number(inv.grandTotal) - Number(inv.paidAmount)
-      if (outstanding <= 0) continue
-      if (daysOverdue <= 0) aging['0-30'] += outstanding
-      else if (daysOverdue <= 30) aging['0-30'] += outstanding
-      else if (daysOverdue <= 60) aging['31-60'] += outstanding
-      else if (daysOverdue <= 90) aging['61-90'] += outstanding
-      else aging['90+'] += outstanding
-    }
-
-    // Monthly cash flow (last 6 months)
-    const cashFlow = await Promise.all(
-      Array.from({ length: 6 }).map(async (_, i) => {
-        const d = subMonths(now, 5 - i)
-        const [inv, pay] = await Promise.all([
-          prisma.invoice.aggregate({
-            where: {
-              organizationId: orgId,
-              issueDate: { gte: startOfMonth(d), lte: endOfMonth(d) },
-              deletedAt: null,
-            },
-            _sum: { grandTotal: true },
-          }),
-          prisma.payment.aggregate({
-            where: {
-              organizationId: orgId,
-              paymentDate: { gte: startOfMonth(d), lte: endOfMonth(d) },
-              deletedAt: null,
-            },
-            _sum: { amount: true },
-          }),
-        ])
-        return {
-          name: format(d, 'MMM yy'),
-          invoiced: Number(inv._sum.grandTotal ?? 0),
-          collected: Number(pay._sum.amount ?? 0),
-        }
-      })
+    // H-1: AR Aging — single SQL aggregate, no row scan in Node.js
+    const agingRaw = await prisma.$queryRaw<
+      [{ b1: string | null; b2: string | null; b3: string | null; b4: string | null }]
+    >(
+      Prisma.sql`
+        SELECT
+          SUM(CASE
+            WHEN ("dueDate" IS NULL OR NOW() - "dueDate" <= INTERVAL '30 days')
+              AND ("grandTotal" - "paidAmount") > 0
+            THEN ("grandTotal" - "paidAmount") ELSE 0 END)::text AS b1,
+          SUM(CASE
+            WHEN "dueDate" IS NOT NULL
+              AND NOW() - "dueDate" > INTERVAL '30 days'
+              AND NOW() - "dueDate" <= INTERVAL '60 days'
+              AND ("grandTotal" - "paidAmount") > 0
+            THEN ("grandTotal" - "paidAmount") ELSE 0 END)::text AS b2,
+          SUM(CASE
+            WHEN "dueDate" IS NOT NULL
+              AND NOW() - "dueDate" > INTERVAL '60 days'
+              AND NOW() - "dueDate" <= INTERVAL '90 days'
+              AND ("grandTotal" - "paidAmount") > 0
+            THEN ("grandTotal" - "paidAmount") ELSE 0 END)::text AS b3,
+          SUM(CASE
+            WHEN "dueDate" IS NOT NULL
+              AND NOW() - "dueDate" > INTERVAL '90 days'
+              AND ("grandTotal" - "paidAmount") > 0
+            THEN ("grandTotal" - "paidAmount") ELSE 0 END)::text AS b4
+        FROM "Invoice"
+        WHERE "organizationId" = ${orgId}::uuid
+          AND "status" IN ('OVERDUE', 'ISSUED', 'PARTIALLY_PAID')
+          AND "deletedAt" IS NULL
+      `
     )
+    const ar = agingRaw[0] ?? { b1: null, b2: null, b3: null, b4: null }
+
+    // Monthly cash flow — 2 queries (one for invoices, one for payments) covering 6 months
+    const sixMonthsAgo = startOfMonth(subMonths(now, 5))
+    const [invMonthly, payMonthly] = await Promise.all([
+      prisma.$queryRaw<{ month: string; invoiced: string }[]>(
+        Prisma.sql`
+          SELECT TO_CHAR(DATE_TRUNC('month', "issueDate"), 'Mon YY') AS month,
+                 SUM("grandTotal")::text AS invoiced
+          FROM "Invoice"
+          WHERE "organizationId" = ${orgId}::uuid
+            AND "issueDate" >= ${sixMonthsAgo}
+            AND "deletedAt" IS NULL
+          GROUP BY DATE_TRUNC('month', "issueDate")
+          ORDER BY DATE_TRUNC('month', "issueDate")
+        `
+      ),
+      prisma.$queryRaw<{ month: string; collected: string }[]>(
+        Prisma.sql`
+          SELECT TO_CHAR(DATE_TRUNC('month', "paymentDate"), 'Mon YY') AS month,
+                 SUM("amount")::text AS collected
+          FROM "Payment"
+          WHERE "organizationId" = ${orgId}::uuid
+            AND "paymentDate" >= ${sixMonthsAgo}
+            AND "deletedAt" IS NULL
+          GROUP BY DATE_TRUNC('month', "paymentDate")
+          ORDER BY DATE_TRUNC('month', "paymentDate")
+        `
+      ),
+    ])
+
+    // Build a full 6-month series filling zeros for months with no data
+    const cashFlow = Array.from({ length: 6 }).map((_, i) => {
+      const d = subMonths(now, 5 - i)
+      const label = format(d, 'MMM yy')
+      const inv = invMonthly.find((r) => r.month === label)
+      const pay = payMonthly.find((r) => r.month === label)
+      return {
+        name: label,
+        invoiced: Number(inv?.invoiced ?? 0),
+        collected: Number(pay?.collected ?? 0),
+      }
+    })
 
     const outstandingAmt =
       Number(outstanding._sum.grandTotal ?? 0) - Number(outstanding._sum.paidAmount ?? 0)
@@ -140,10 +164,10 @@ export async function GET(req: Request) {
       },
       cashFlow,
       aging: [
-        { name: '0-30 days', value: aging['0-30'] },
-        { name: '31-60 days', value: aging['31-60'] },
-        { name: '61-90 days', value: aging['61-90'] },
-        { name: '90+ days', value: aging['90+'] },
+        { name: '0-30 days', value: Math.round(Number(ar.b1 ?? 0)) },
+        { name: '31-60 days', value: Math.round(Number(ar.b2 ?? 0)) },
+        { name: '61-90 days', value: Math.round(Number(ar.b3 ?? 0)) },
+        { name: '90+ days', value: Math.round(Number(ar.b4 ?? 0)) },
       ],
       paymentMethodDist: paymentMethodDist.map((p) => ({
         name: p.method,

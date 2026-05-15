@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getTenantSession } from '@/lib/auth/session'
+import { requireTenantAuth } from '@/lib/auth/require-tenant-auth'
 import { getUploadUrl } from '@/lib/r2'
 import { nanoid } from 'nanoid'
 
-// H-2: strict allowlist — no HTML, JS, or executables can be uploaded.
+// Strict allowlist — no HTML, JS, or executables can be uploaded.
 // Covers PDFs, Office docs, images, and common archive formats.
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -24,8 +24,10 @@ const ALLOWED_MIME_TYPES = new Set([
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB
 
 export async function POST(req: NextRequest) {
-  const session = await getTenantSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // H-4: requireTenantAuth includes per-user rate limiting via checkApiRateLimit
+  const auth = await requireTenantAuth()
+  if (!auth.ok) return auth.response
+  const { organizationId } = auth.session
 
   try {
     const { filename, contentType, sizeBytes } = await req.json()
@@ -34,9 +36,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'filename and contentType required' }, { status: 400 })
     }
 
-    // H-2: enforce allowlist — client-supplied contentType cannot be trusted for
-    // setting the S3 ContentType header, as that's what browsers use when serving
-    // the file. An HTML file uploaded with contentType 'text/html' becomes an XSS vector.
+    // Enforce MIME allowlist — client-supplied contentType cannot be trusted for
+    // setting the S3 ContentType header. An HTML file with 'text/html' becomes an XSS vector.
     if (!ALLOWED_MIME_TYPES.has(contentType)) {
       return NextResponse.json(
         { error: 'File type not allowed. Supported: PDF, images, Word, Excel, CSV, ZIP.' },
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     const ext = filename.split('.').pop()?.toLowerCase() ?? 'bin'
-    const key = `attachments/${session.organizationId}/${nanoid()}.${ext}`
+    const key = `attachments/${organizationId}/${nanoid()}.${ext}`
 
     const { uploadUrl, publicUrl } = await getUploadUrl({
       key,

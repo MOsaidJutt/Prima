@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockFindFirst = vi.fn()
 const mockUpdate = vi.fn()
+const mockCreate = vi.fn()
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -16,13 +17,24 @@ vi.mock('@/lib/prisma', () => ({
     organization: {
       findFirst: (...args: unknown[]) => mockFindFirst(...args),
     },
+    platformAuditLog: {
+      create: (...args: unknown[]) => mockCreate(...args),
+    },
   },
 }))
 
-// ── Mock cookies ──────────────────────────────────────────────────────────────
+// ── Mock cookies + headers ────────────────────────────────────────────────────
 const mockSet = vi.fn()
 vi.mock('next/headers', () => ({
   cookies: async () => ({ set: mockSet, get: vi.fn() }),
+  // C-1: headers() is now called inside superAdminLogin for rate-limit IP extraction
+  headers: async () => ({ get: () => null }),
+}))
+
+// ── Mock rate-limit ───────────────────────────────────────────────────────────
+// C-1: rate limiting must return null (not limited) in tests by default
+vi.mock('@/lib/rate-limit', () => ({
+  checkLoginRateLimitByIP: vi.fn().mockResolvedValue(null),
 }))
 
 // ── Mock redirect ─────────────────────────────────────────────────────────────
@@ -53,6 +65,7 @@ describe('superAdminLogin', () => {
     mockFindFirst.mockReset()
     mockUpdate.mockReset()
     mockSet.mockReset()
+    mockCreate.mockResolvedValue({})
     mockUpdate.mockResolvedValue(activeAdmin)
   })
 
@@ -108,5 +121,17 @@ describe('superAdminLogin', () => {
         data: expect.objectContaining({ lastLoginAt: expect.any(Date) }),
       })
     )
+  })
+
+  it('returns error when rate limited (C-1)', async () => {
+    const { checkLoginRateLimitByIP } = await import('@/lib/rate-limit')
+    vi.mocked(checkLoginRateLimitByIP).mockResolvedValueOnce({
+      error: 'Too many login attempts. Please wait a minute and try again.',
+    })
+    const result = await superAdminLogin('admin@prima.app', 'ValidPass@1')
+    expect(result).toEqual({
+      error: 'Too many login attempts. Please wait a minute and try again.',
+    })
+    expect(mockSet).not.toHaveBeenCalled()
   })
 })

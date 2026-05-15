@@ -148,6 +148,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       action: 'UPDATE',
       entity: 'DSREntry',
       entityId: id,
+      // H-3: entry is already loaded above; capture relevant pre-update fields
+      oldValue: { status: entry.status, grandTotal: entry.grandTotal, clientId: entry.clientId },
+      newValue: { grandTotal: updated.grandTotal },
       req,
     })
 

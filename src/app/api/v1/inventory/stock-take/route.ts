@@ -30,72 +30,77 @@ export async function POST(req: NextRequest) {
     })
     if (!warehouse) return apiError('Warehouse not found', 404)
 
-    const variances: Array<{
-      productId: string
-      expected: number
-      counted: number
-      variance: number
-    }> = []
+    // H-5: batch-fetch all existing stock in ONE query before the transaction,
+    // so the transaction body contains only writes (no reads inside the tx).
+    // This avoids holding row locks while waiting for sequential DB round-trips.
+    const productIds = counts.map((c) => c.productId)
+    const existingStocks = await prisma.inventoryStock.findMany({
+      where: { productId: { in: productIds }, warehouseId, organizationId: ctx.organizationId },
+      select: { productId: true, quantity: true },
+    })
+    const stockMap = Object.fromEntries(existingStocks.map((s) => [s.productId, s.quantity]))
 
-    await prisma.$transaction(async (tx) => {
-      for (const count of counts) {
-        // C-2: include organizationId in InventoryStock lookup
-        const existing = await tx.inventoryStock.findFirst({
-          where: { productId: count.productId, warehouseId, organizationId: ctx.organizationId },
-        })
-        const expected = existing?.quantity ?? 0
-        const variance = count.countedQuantity - expected
+    // Compute variances in memory (no DB access)
+    const variances = counts.map((count) => ({
+      productId: count.productId,
+      notes: count.notes,
+      expected: stockMap[count.productId] ?? 0,
+      counted: count.countedQuantity,
+      variance: count.countedQuantity - (stockMap[count.productId] ?? 0),
+    }))
 
-        variances.push({
-          productId: count.productId,
-          expected,
-          counted: count.countedQuantity,
-          variance,
-        })
+    const changed = variances.filter((v) => v.variance !== 0)
 
-        if (variance !== 0) {
-          await tx.inventoryStock.upsert({
-            where: { productId_warehouseId: { productId: count.productId, warehouseId } },
+    if (changed.length > 0) {
+      // All writes in one transaction — no reads inside, so the transaction is short and fast
+      await prisma.$transaction([
+        ...changed.map((v) =>
+          prisma.inventoryStock.upsert({
+            where: { productId_warehouseId: { productId: v.productId, warehouseId } },
             create: {
               organizationId: ctx.organizationId,
-              productId: count.productId,
+              productId: v.productId,
               warehouseId,
-              quantity: count.countedQuantity,
+              quantity: v.counted,
               lastModifiedBy: user.id,
             },
-            update: { quantity: count.countedQuantity, lastModifiedBy: user.id },
+            update: { quantity: v.counted, lastModifiedBy: user.id },
           })
-          await tx.inventoryTransaction.create({
+        ),
+        ...changed.map((v) =>
+          prisma.inventoryTransaction.create({
             data: {
               organizationId: ctx.organizationId,
-              productId: count.productId,
-              toWarehouseId: variance > 0 ? warehouseId : undefined,
-              fromWarehouseId: variance < 0 ? warehouseId : undefined,
+              productId: v.productId,
+              toWarehouseId: v.variance > 0 ? warehouseId : undefined,
+              fromWarehouseId: v.variance < 0 ? warehouseId : undefined,
               type: 'STOCK_TAKE',
-              quantity: Math.abs(variance),
-              reason: `Stock take variance: expected ${expected}, counted ${count.countedQuantity}`,
-              notes: count.notes,
+              quantity: Math.abs(v.variance),
+              reason: `Stock take variance: expected ${v.expected}, counted ${v.counted}`,
+              notes: v.notes,
               referenceType: 'STOCK_TAKE',
               performedBy: user.id,
             },
           })
-        }
-      }
-    })
+        ),
+      ])
+    }
 
-    const adjustedCount = variances.filter((v) => v.variance !== 0).length
-
-    // L-3: pass req
     await createAuditLog({
       organizationId: ctx.organizationId,
       userId: user.id,
       action: 'UPDATE',
       entity: 'StockTake',
       entityId: warehouseId,
-      newValue: { warehouseId, totalProducts: counts.length, adjusted: adjustedCount },
+      newValue: { warehouseId, totalProducts: counts.length, adjusted: changed.length },
       req,
     })
 
-    return apiOk({ success: true, variances, totalProducts: counts.length, adjustedCount })
+    return apiOk({
+      success: true,
+      variances,
+      totalProducts: counts.length,
+      adjustedCount: changed.length,
+    })
   })
 }

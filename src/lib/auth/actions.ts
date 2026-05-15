@@ -1,27 +1,61 @@
 'use server'
 
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
-import {
-  createSuperAdminToken,
-  createTenantToken,
-  setSessionCookie,
-  clearSessionCookie,
-} from '@/lib/auth/session'
+import { createSuperAdminToken, setSessionCookie, clearSessionCookie } from '@/lib/auth/session'
+import { checkLoginRateLimitByIP } from '@/lib/rate-limit'
 
 // ── Super Admin Login ──────────────────────────────────────────────────────
 
 export async function superAdminLogin(email: string, password: string) {
+  // C-1: rate-limit by IP — server actions don't expose Request, so read headers directly
+  const headersList = await headers()
+  const ip =
+    headersList.get('x-forwarded-for')?.split(',')[0].trim() ??
+    headersList.get('x-real-ip') ??
+    'anonymous'
+  const rateLimit = await checkLoginRateLimitByIP(ip)
+  if (rateLimit) return { error: rateLimit.error as string }
+
   const admin = await prisma.superAdmin.findFirst({
     where: { email: email.toLowerCase().trim(), deletedAt: null },
   })
 
-  if (!admin || !admin.isActive) return { error: 'Invalid credentials' }
+  if (!admin || !admin.isActive) {
+    // L-5: log failed login attempt (fire-and-forget; never block the response)
+    prisma.platformAuditLog
+      .create({
+        data: {
+          action: 'LOGIN_FAILED',
+          entity: 'SuperAdmin',
+          newValue: { email: email.toLowerCase().trim(), reason: 'not found or inactive' },
+          ipAddress: ip,
+          superAdminId: admin?.id ?? (await getPlatformOwnerIdForAudit()),
+        },
+      })
+      .catch(() => {})
+    return { error: 'Invalid credentials' as const }
+  }
 
   const valid = await bcrypt.compare(password, admin.passwordHash)
-  if (!valid) return { error: 'Invalid credentials' }
+  if (!valid) {
+    // L-5: log failed login attempt
+    prisma.platformAuditLog
+      .create({
+        data: {
+          action: 'LOGIN_FAILED',
+          entity: 'SuperAdmin',
+          entityId: admin.id,
+          newValue: { reason: 'wrong password' },
+          ipAddress: ip,
+          superAdminId: admin.id,
+        },
+      })
+      .catch(() => {})
+    return { error: 'Invalid credentials' as const }
+  }
 
   const token = await createSuperAdminToken({
     type: 'super_admin',
@@ -35,16 +69,37 @@ export async function superAdminLogin(email: string, password: string) {
     sessionToken: crypto.randomUUID(),
   })
 
-  await prisma.superAdmin.update({
-    where: { id: admin.id },
-    data: { lastLoginAt: new Date() },
-  })
+  await Promise.all([
+    prisma.superAdmin.update({
+      where: { id: admin.id },
+      data: { lastLoginAt: new Date() },
+    }),
+    // L-5: log successful super admin login
+    prisma.platformAuditLog.create({
+      data: {
+        action: 'LOGIN',
+        entity: 'SuperAdmin',
+        entityId: admin.id,
+        ipAddress: ip,
+        superAdminId: admin.id,
+      },
+    }),
+  ])
 
   const cookieStore = await cookies()
   const opts = setSessionCookie('super_admin', token)
   cookieStore.set(opts.name, opts.value, opts)
 
   return { success: true }
+}
+
+// Fallback for audit log when no admin is found: use the owner account
+async function getPlatformOwnerIdForAudit(): Promise<string> {
+  const owner = await prisma.superAdmin.findFirst({
+    where: { role: 'OWNER', deletedAt: null },
+    select: { id: true },
+  })
+  return owner?.id ?? 'unknown'
 }
 
 export async function superAdminLogout() {
@@ -55,119 +110,9 @@ export async function superAdminLogout() {
 }
 
 // ── Tenant Login ──────────────────────────────────────────────────────────
-// Phase 1c: authenticates against User.passwordHash (not Organization.adminPasswordHash).
-// Falls back to adminPasswordHash for orgs that completed onboarding before Phase 1c
-// (i.e., before User records were created). The fallback path will be removed in Phase 7.
-
-export async function tenantLogin(email: string, password: string) {
-  const normalizedEmail = email.toLowerCase().trim()
-
-  // Look up User record first (Phase 1c path)
-  const user = await prisma.user.findFirst({
-    where: {
-      email: normalizedEmail,
-      deletedAt: null,
-      isActive: true,
-      organization: { deletedAt: null },
-    },
-    include: {
-      organization: {
-        select: { id: true, slug: true, name: true, status: true, plan: true, deletedAt: true },
-      },
-      role: { select: { id: true, name: true, isSystem: true, permissions: true } },
-    },
-  })
-
-  if (user && user.passwordHash) {
-    const org = user.organization
-    if (org.status === 'SUSPENDED' || org.status === 'CANCELLED') {
-      return { error: 'Your account has been suspended. Contact support.' }
-    }
-
-    const valid = await bcrypt.compare(password, user.passwordHash)
-    if (!valid) return { error: 'Invalid credentials' }
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    })
-
-    const token = await createTenantToken({
-      type: 'tenant',
-      userId: user.id,
-      organizationId: org.id,
-      organization: {
-        id: org.id,
-        slug: org.slug,
-        name: org.name,
-        status: org.status,
-        plan: org.plan,
-      },
-      role: { id: user.role.id, name: user.role.name, isSystem: user.role.isSystem },
-      permissions: user.role.permissions,
-      sessionToken: crypto.randomUUID(),
-    })
-
-    const cookieStore = await cookies()
-    const opts = setSessionCookie('tenant', token)
-    cookieStore.set(opts.name, opts.value, opts)
-
-    // Fetch onboarding state from org
-    const orgFull = await prisma.organization.findUnique({
-      where: { id: org.id },
-      select: { onboardingCompleted: true },
-    })
-    return { success: true, onboardingCompleted: orgFull?.onboardingCompleted ?? true }
-  }
-
-  // Phase 0 fallback: org admin who hasn't had a User created yet
-  const org = await prisma.organization.findFirst({
-    where: { adminEmail: normalizedEmail, deletedAt: null },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      status: true,
-      plan: true,
-      adminPasswordHash: true,
-      onboardingCompleted: true,
-    },
-  })
-
-  if (!org || !org.adminPasswordHash) return { error: 'Invalid credentials' }
-
-  if (org.status === 'SUSPENDED' || org.status === 'CANCELLED') {
-    return { error: 'Your account has been suspended. Contact support.' }
-  }
-
-  const valid = await bcrypt.compare(password, org.adminPasswordHash)
-  if (!valid) return { error: 'Invalid credentials' }
-
-  // Legacy JWT — userId === org.id (Phase 0 placeholder). Any API call that
-  // does a DB User lookup will return null → 401. This forces re-login after
-  // the User record is created (e.g. after running the seed migration).
-  const token = await createTenantToken({
-    type: 'tenant',
-    userId: org.id,
-    organizationId: org.id,
-    organization: {
-      id: org.id,
-      slug: org.slug,
-      name: org.name,
-      status: org.status,
-      plan: org.plan,
-    },
-    role: { id: '', name: 'Owner', isSystem: true },
-    permissions: ['*'],
-    sessionToken: crypto.randomUUID(),
-  })
-
-  const cookieStore = await cookies()
-  const opts = setSessionCookie('tenant', token)
-  cookieStore.set(opts.name, opts.value, opts)
-
-  return { success: true, onboardingCompleted: org.onboardingCompleted }
-}
+// L-4: tenantLogin server action removed — the login page calls /api/auth/login
+// directly (rate-limited, deduped). This file now only contains the super admin
+// path and logout helpers.
 
 export async function tenantLogout() {
   const cookieStore = await cookies()

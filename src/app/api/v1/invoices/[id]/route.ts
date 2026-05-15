@@ -136,6 +136,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       action: 'UPDATE',
       entity: 'Invoice',
       entityId: id,
+      // H-3: capture pre-update state for audit diff
+      oldValue: {
+        status: invoice.status,
+        grandTotal: invoice.grandTotal,
+        lineItemCount: undefined,
+      },
+      newValue: { grandTotal: updated.grandTotal },
       req,
     })
     return apiOk(updated)

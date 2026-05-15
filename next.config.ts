@@ -25,10 +25,13 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       scriptSrc,
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      // C-4: cdnjs for Leaflet CSS; fonts.googleapis for app fonts
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
       "font-src 'self' https://fonts.gstatic.com",
-      `img-src 'self' data: blob: ${process.env.R2_PUBLIC_URL ?? 'https://*.r2.dev'} https://fonts.gstatic.com`,
-      "connect-src 'self'",
+      // C-4: cdnjs for Leaflet marker icons; R2 for org uploads; fonts.gstatic for app fonts
+      `img-src 'self' data: blob: ${process.env.R2_PUBLIC_URL ?? 'https://*.r2.dev'} https://fonts.gstatic.com https://cdnjs.cloudflare.com`,
+      // C-4: OpenStreetMap tiles for Leaflet map widget
+      "connect-src 'self' https://*.tile.openstreetmap.org",
       "frame-ancestors 'none'",
     ].join('; '),
   },
