@@ -9,15 +9,17 @@
  *             pointing at the same REDIS_URL.
  */
 
-import { invoiceOverdueQueue, paymentReminderQueue, performanceSnapshotQueue } from '@/lib/queues'
+import { invoiceOverdueQueue, performanceSnapshotQueue, matviewRefreshQueue } from '@/lib/queues'
 import { startInvoiceOverdueWorker } from './invoice-overdue'
 import { startPaymentReminderWorker } from './payment-reminder'
 import { startPerformanceSnapshotWorker } from './performance-snapshot'
+import { matviewRefreshWorker } from './matview-refresh'
 
 // Start all workers
 const overdueWorker = startInvoiceOverdueWorker()
 const reminderWorker = startPaymentReminderWorker()
 const snapshotWorker = startPerformanceSnapshotWorker()
+// matviewRefreshWorker is started on import
 
 // Register recurring cron jobs
 async function registerCrons() {
@@ -43,6 +45,17 @@ async function registerCrons() {
     }
   )
 
+  // Refresh materialized views every night at 02:00 UTC
+  await matviewRefreshQueue.add(
+    'refresh-matviews',
+    {},
+    {
+      repeat: { pattern: '0 2 * * *' },
+      jobId: 'matview-refresh-cron',
+      removeOnComplete: true,
+    }
+  )
+
   console.log('[workers] Cron jobs registered')
 }
 
@@ -52,6 +65,11 @@ console.log('[workers] All workers started')
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  await Promise.all([overdueWorker.close(), reminderWorker.close(), snapshotWorker.close()])
+  await Promise.all([
+    overdueWorker.close(),
+    reminderWorker.close(),
+    snapshotWorker.close(),
+    matviewRefreshWorker.close(),
+  ])
   process.exit(0)
 })

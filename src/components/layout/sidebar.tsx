@@ -27,6 +27,10 @@ import {
   Target,
   Receipt,
   LayoutTemplate,
+  TrendingUp,
+  DollarSign,
+  LineChart,
+  PieChart,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -43,9 +47,36 @@ const superAdminNav: NavItem[] = [
 
 const tenantAdminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  // Phase 4 — Dashboards
+  { label: 'Sales', href: '/admin/dashboards/sales', icon: TrendingUp, slug: 'dashboard:read' },
+  {
+    label: 'Financial',
+    href: '/admin/dashboards/financial',
+    icon: DollarSign,
+    slug: 'dashboard:read',
+  },
+  {
+    label: 'Distributors',
+    href: '/admin/dashboards/distributors',
+    icon: LineChart,
+    slug: 'dashboard:read',
+  },
+  { label: 'Clients', href: '/admin/dashboards/clients', icon: PieChart, slug: 'dashboard:read' },
+  {
+    label: 'Inventory',
+    href: '/admin/dashboards/inventory',
+    icon: BarChart3,
+    slug: 'dashboard:read',
+  },
+  { label: 'EPR', href: '/admin/dashboards/epr', icon: Users, slug: 'dashboard:read' },
   // Phase 2 — Business Entities
-  { label: 'Distributors', href: '/admin/distributors', icon: Truck, slug: 'distributors:read' },
-  { label: 'Clients', href: '/admin/clients', icon: Users, slug: 'clients:read' },
+  {
+    label: 'Distributors List',
+    href: '/admin/distributors',
+    icon: Truck,
+    slug: 'distributors:read',
+  },
+  { label: 'Clients List', href: '/admin/clients', icon: Users, slug: 'clients:read' },
   { label: 'Products', href: '/admin/products', icon: Package, slug: 'products:read' },
   { label: 'Inventory', href: '/admin/inventory', icon: Warehouse, slug: 'inventory:read' },
   // Phase 3 — DSR & Invoicing
@@ -92,6 +123,7 @@ const managerNav: NavItem[] = [
 const salesRepNav: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'My DSRs', href: '/dashboard/dsr', icon: BarChart3 },
+  { label: 'Submit DSR', href: '/dashboard/dsr/new', icon: FileText },
 ]
 
 type SidebarVariant = 'super_admin' | 'tenant_admin' | 'manager' | 'sales_rep'

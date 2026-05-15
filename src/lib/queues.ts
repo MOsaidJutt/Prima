@@ -7,6 +7,7 @@ export const paymentReminderQueue = new Queue('payment-reminder', { connection: 
 export const performanceSnapshotQueue = new Queue('performance-snapshot', {
   connection: redisConnection,
 })
+export const matviewRefreshQueue = new Queue('matview-refresh', { connection: redisConnection })
 
 // Schedule payment reminders for the 5 standard intervals around invoice due date
 // daysOffset: -3 (3 days before), 0 (on due day), +7, +14, +30 (days overdue)

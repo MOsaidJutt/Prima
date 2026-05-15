@@ -84,8 +84,9 @@ export const PERMISSION_SLUGS = [
   'targets:update',
   'targets:delete',
 
-  // reports (Phase 4)
+  // reports / dashboards (Phase 4)
   'reports:read',
+  'dashboard:read',
 
   // AI (Phase 5)
   'ai:use',
@@ -240,6 +241,7 @@ export const DEFAULT_ROLES: Array<{
       'targets:create',
       'targets:update',
       'reports:read',
+      'dashboard:read',
       'ai:use',
     ],
   },
@@ -260,6 +262,7 @@ export const DEFAULT_ROLES: Array<{
       'inventory:read',
       'targets:read',
       'reports:read',
+      'dashboard:read',
       'ai:use',
     ],
   },
