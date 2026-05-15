@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { checkLoginRateLimit } from '@/lib/rate-limit'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
-import { createTenantToken, setSessionCookie } from '@/lib/auth/session'
+import { createTenantToken, createSuperAdminToken, setSessionCookie } from '@/lib/auth/session'
 import { cookies } from 'next/headers'
 
 // Rate-limited login API route.
@@ -107,6 +107,38 @@ export async function POST(req: Request) {
     })
 
     if (!org || !org.adminPasswordHash) {
+      // Last fallback: check if this is a Super Admin logging in via the main login page
+      const superAdmin = await prisma.superAdmin.findFirst({
+        where: { email: normalizedEmail, isActive: true, deletedAt: null },
+      })
+      if (superAdmin) {
+        const saValid = await bcrypt.compare(password, superAdmin.passwordHash)
+        if (!saValid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
+
+        const saToken = await createSuperAdminToken({
+          type: 'super_admin',
+          superAdmin: {
+            id: superAdmin.id,
+            email: superAdmin.email,
+            name: superAdmin.name,
+            role: superAdmin.role,
+            permissions: superAdmin.permissions,
+          },
+          sessionToken: crypto.randomUUID(),
+        })
+
+        await prisma.superAdmin.update({
+          where: { id: superAdmin.id },
+          data: { lastLoginAt: new Date() },
+        })
+
+        const cookieStore = await cookies()
+        const opts = setSessionCookie('super_admin', saToken)
+        cookieStore.set(opts.name, opts.value, opts)
+
+        return NextResponse.json({ success: true, superAdmin: true })
+      }
+
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
 

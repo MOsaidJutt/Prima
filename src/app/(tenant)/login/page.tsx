@@ -29,7 +29,9 @@ export default function TenantLoginPage() {
         toast.error(result.error ?? 'Invalid credentials')
         return
       }
-      if (result.onboardingCompleted === false) {
+      if (result.superAdmin) {
+        router.push('/super-admin/dashboard')
+      } else if (result.onboardingCompleted === false) {
         router.push('/onboarding')
       } else {
         router.push('/admin')
