@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, ShieldCheck } from 'lucide-react'
 
@@ -92,9 +92,8 @@ export default function AcceptInvitePage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -104,9 +103,8 @@ export default function AcceptInvitePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirm">Confirm password</Label>
-                <Input
+                <PasswordInput
                   id="confirm"
-                  type="password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder="••••••••"

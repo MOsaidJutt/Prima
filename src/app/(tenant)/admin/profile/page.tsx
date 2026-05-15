@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
@@ -259,27 +260,24 @@ export default function ProfilePage() {
               <form onSubmit={handleChangePassword} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="current">Current Password</Label>
-                  <Input
+                  <PasswordInput
                     id="current"
-                    type="password"
                     value={pwdForm.current}
                     onChange={(e) => setPwdForm({ ...pwdForm, current: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="next">New Password</Label>
-                  <Input
+                  <PasswordInput
                     id="next"
-                    type="password"
                     value={pwdForm.next}
                     onChange={(e) => setPwdForm({ ...pwdForm, next: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm">Confirm New Password</Label>
-                  <Input
+                  <PasswordInput
                     id="confirm"
-                    type="password"
                     value={pwdForm.confirm}
                     onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })}
                   />

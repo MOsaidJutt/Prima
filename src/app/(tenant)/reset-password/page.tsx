@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Lock } from 'lucide-react'
 
@@ -90,8 +91,7 @@ export default function ResetPasswordPage() {
                   <form onSubmit={handleConfirm} className="space-y-4">
                     <div className="space-y-2">
                       <Label>New Password</Label>
-                      <Input
-                        type="password"
+                      <PasswordInput
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
@@ -100,8 +100,7 @@ export default function ResetPasswordPage() {
                     </div>
                     <div className="space-y-2">
                       <Label>Confirm Password</Label>
-                      <Input
-                        type="password"
+                      <PasswordInput
                         value={confirm}
                         onChange={(e) => setConfirm(e.target.value)}
                         required
