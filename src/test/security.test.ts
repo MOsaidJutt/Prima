@@ -55,8 +55,10 @@ function injectSession(token: string) {
   mockCookieGet.mockReturnValue({ value: token })
 }
 
-function makeRequest(url: string, opts: RequestInit = {}): Request {
-  return new Request(`http://localhost:3000${url}`, opts)
+import type { NextRequest } from 'next/server'
+
+function makeRequest(url: string, opts: RequestInit = {}): NextRequest {
+  return new Request(`http://localhost:3000${url}`, opts) as unknown as NextRequest
 }
 
 // ── Test fixtures ─────────────────────────────────────────────────────────────
@@ -71,19 +73,35 @@ let ownerA: UserShape, viewerA: UserShape
 let resourceUserInOrgB: UserShape
 let ownerAToken: string, viewerAToken: string
 
+// Phase 3 fixtures
+let clientA: { id: string }
+let clientB: { id: string }
+let dsrInOrgB: { id: string }
+let invoiceInOrgB: { id: string }
+let targetInOrgB: { id: string }
+
+const SLUGS_TO_CLEAN = ['test-org-a-sec', 'test-org-b-sec']
+
 async function cleanupTestData() {
-  await prisma.auditLog.deleteMany({
-    where: { organization: { slug: { in: ['test-org-a-sec', 'test-org-b-sec'] } } },
+  // Phase 3 cleanup (must come before FK dependencies)
+  await prisma.salesTarget.deleteMany({ where: { organization: { slug: { in: SLUGS_TO_CLEAN } } } })
+  await prisma.invoiceLineItem.deleteMany({
+    where: { invoice: { organization: { slug: { in: SLUGS_TO_CLEAN } } } },
   })
-  await prisma.user.deleteMany({
-    where: { organization: { slug: { in: ['test-org-a-sec', 'test-org-b-sec'] } } },
+  await prisma.invoice.deleteMany({ where: { organization: { slug: { in: SLUGS_TO_CLEAN } } } })
+  await prisma.dSRLineItem.deleteMany({
+    where: { dsrEntry: { organization: { slug: { in: SLUGS_TO_CLEAN } } } },
   })
-  await prisma.role.deleteMany({
-    where: { organization: { slug: { in: ['test-org-a-sec', 'test-org-b-sec'] } } },
+  await prisma.dSREntry.deleteMany({ where: { organization: { slug: { in: SLUGS_TO_CLEAN } } } })
+  await prisma.client.deleteMany({ where: { organization: { slug: { in: SLUGS_TO_CLEAN } } } })
+  await prisma.invoiceNumberSequence.deleteMany({
+    where: { organization: { slug: { in: SLUGS_TO_CLEAN } } },
   })
-  await prisma.organization.deleteMany({
-    where: { slug: { in: ['test-org-a-sec', 'test-org-b-sec'] } },
-  })
+  // Phase 1 cleanup
+  await prisma.auditLog.deleteMany({ where: { organization: { slug: { in: SLUGS_TO_CLEAN } } } })
+  await prisma.user.deleteMany({ where: { organization: { slug: { in: SLUGS_TO_CLEAN } } } })
+  await prisma.role.deleteMany({ where: { organization: { slug: { in: SLUGS_TO_CLEAN } } } })
+  await prisma.organization.deleteMany({ where: { slug: { in: SLUGS_TO_CLEAN } } })
 }
 
 beforeAll(async () => {
@@ -173,6 +191,66 @@ beforeAll(async () => {
     role: { id: viewerRoleA.id, name: 'Viewer', isSystem: true },
     permissions: viewerRoleA.permissions,
     sessionToken: crypto.randomUUID(),
+  })
+
+  // ── Phase 3 fixtures ───────────────────────────────────────────────────────
+  // Clients in each org
+  clientA = await prisma.client.create({
+    data: {
+      organizationId: orgA.id,
+      code: 'CLT-TEST-A',
+      companyName: 'Test Client A',
+      lastModifiedBy: ownerA.id,
+    },
+  })
+  clientB = await prisma.client.create({
+    data: {
+      organizationId: orgB.id,
+      code: 'CLT-TEST-B',
+      companyName: 'Test Client B',
+      lastModifiedBy: resourceUserInOrgB.id,
+    },
+  })
+
+  // DSR belonging to Org B
+  dsrInOrgB = await prisma.dSREntry.create({
+    data: {
+      organizationId: orgB.id,
+      submittedById: resourceUserInOrgB.id,
+      clientId: clientB.id,
+      reportDate: new Date(),
+      visitType: 'IN_PERSON',
+      status: 'DRAFT',
+      grandTotal: 1000,
+      lastModifiedBy: resourceUserInOrgB.id,
+    },
+  })
+
+  // Invoice belonging to Org B
+  invoiceInOrgB = await prisma.invoice.create({
+    data: {
+      organizationId: orgB.id,
+      invoiceNumber: 'INV-SEC-TEST-001',
+      clientId: clientB.id,
+      status: 'DRAFT',
+      grandTotal: 1000,
+      lastModifiedBy: resourceUserInOrgB.id,
+    },
+  })
+
+  // Target belonging to Org B
+  targetInOrgB = await prisma.salesTarget.create({
+    data: {
+      organizationId: orgB.id,
+      name: 'Org B Secret Target',
+      scope: 'ORGANIZATION',
+      type: 'REVENUE',
+      period: 'MONTHLY',
+      targetValue: 500000,
+      periodStart: new Date(),
+      periodEnd: new Date(Date.now() + 30 * 86400000),
+      lastModifiedBy: resourceUserInOrgB.id,
+    },
   })
 })
 
@@ -284,6 +362,79 @@ describe('Audit Log', () => {
       expect(log!.action).toBe('UPDATE')
       const newVal = log!.newValue as Record<string, unknown>
       expect(newVal.name).toBe('Viewer A Updated')
+    }
+  )
+})
+
+// ── Test 4: Phase 3 Tenant Isolation — DSR, Invoice, Target ──────────────────
+
+describe('Phase 3 Tenant Isolation', () => {
+  it.skipIf(SKIP)('GET /api/v1/dsr/:id — Org A session receives 404 for Org B DSR', async () => {
+    const { GET } = await import('@/app/api/v1/dsr/[id]/route')
+    injectSession(ownerAToken)
+    const req = makeRequest(`/api/v1/dsr/${dsrInOrgB.id}`)
+    const res = await GET(req, { params: Promise.resolve({ id: dsrInOrgB.id }) })
+    expect(res.status).toBe(404)
+  })
+
+  it.skipIf(SKIP)('GET /api/v1/dsr — Org A list never contains Org B DSRs', async () => {
+    const { GET } = await import('@/app/api/v1/dsr/route')
+    injectSession(ownerAToken)
+    const req = makeRequest('/api/v1/dsr?all=true')
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const ids = (body.data as { id: string }[]).map((d) => d.id)
+    expect(ids).not.toContain(dsrInOrgB.id)
+  })
+
+  it.skipIf(SKIP)(
+    'GET /api/v1/invoices/:id — Org A session receives 404 for Org B invoice',
+    async () => {
+      const { GET } = await import('@/app/api/v1/invoices/[id]/route')
+      injectSession(ownerAToken)
+      const req = makeRequest(`/api/v1/invoices/${invoiceInOrgB.id}`)
+      const res = await GET(req, { params: Promise.resolve({ id: invoiceInOrgB.id }) })
+      expect(res.status).toBe(404)
+    }
+  )
+
+  it.skipIf(SKIP)('GET /api/v1/invoices — Org A list never contains Org B invoices', async () => {
+    const { GET } = await import('@/app/api/v1/invoices/route')
+    injectSession(ownerAToken)
+    const req = makeRequest('/api/v1/invoices')
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const ids = (body.data as { id: string }[]).map((inv) => inv.id)
+    expect(ids).not.toContain(invoiceInOrgB.id)
+  })
+
+  it.skipIf(SKIP)('GET /api/v1/targets — Org A list never contains Org B targets', async () => {
+    const { GET } = await import('@/app/api/v1/targets/route')
+    injectSession(ownerAToken)
+    const req = makeRequest('/api/v1/targets')
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // Targets returns paginated { data, total, page, pageSize }
+    const ids = (body.data as { id: string }[]).map((t) => t.id)
+    expect(ids).not.toContain(targetInOrgB.id)
+  })
+
+  it.skipIf(SKIP)(
+    'POST /api/v1/dsr/:id/approve — Org A cannot approve Org B DSR (404)',
+    async () => {
+      const { POST } = await import('@/app/api/v1/dsr/[id]/approve/route')
+      injectSession(ownerAToken)
+      const req = makeRequest(`/api/v1/dsr/${dsrInOrgB.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ createInvoice: false }),
+      })
+      const res = await POST(req, { params: Promise.resolve({ id: dsrInOrgB.id }) })
+      // DSR belongs to Org B; Org A sees 404 (not 403) to prevent org enumeration
+      expect(res.status).toBe(404)
     }
   )
 })

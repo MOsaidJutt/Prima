@@ -1,31 +1,8 @@
 import { NextRequest } from 'next/server'
 import { withTenantApi, apiOk, apiError } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
+import { generateInvoiceNumber } from '@/lib/invoice-helpers'
 import { nanoid } from 'nanoid'
-
-async function generateInvoiceNumber(orgId: string): Promise<string> {
-  const template = await prisma.invoiceTemplate.findFirst({
-    where: { organizationId: orgId, isDefault: true, deletedAt: null },
-  })
-  const prefix = template?.invoiceNumberPrefix ?? 'INV'
-  const padding = template?.invoiceNumberPadding ?? 4
-  const includeYear = template?.invoiceNumberIncludeYear ?? true
-  const year = new Date().getFullYear()
-  const last = await prisma.invoice.findFirst({
-    where: { organizationId: orgId, invoiceNumber: { startsWith: prefix } },
-    orderBy: { createdAt: 'desc' },
-    select: { invoiceNumber: true },
-  })
-  let nextNum = 1
-  if (last) {
-    const parts = last.invoiceNumber.split('-')
-    const lastNum = parseInt(parts[parts.length - 1], 10)
-    if (!isNaN(lastNum)) nextNum = lastNum + 1
-  }
-  return includeYear
-    ? `${prefix}-${year}-${String(nextNum).padStart(padding, '0')}`
-    : `${prefix}-${String(nextNum).padStart(padding, '0')}`
-}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return withTenantApi(req, 'invoices:create', async ({ ctx, user }) => {

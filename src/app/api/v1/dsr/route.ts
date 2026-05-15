@@ -79,37 +79,40 @@ export async function POST(req: NextRequest) {
     })
     if (!client) return apiError('Client not found', 404)
 
-    // Calculate line item totals
-    const lineItemsWithTotals = await Promise.all(
-      d.lineItems.map(async (li) => {
-        const product = await prisma.product.findFirst({
-          where: { id: li.productId, organizationId: ctx.organizationId, deletedAt: null },
-          select: { sellingPrice: true, taxRate: true },
+    // Batch-fetch all products in one query (fixes N+1)
+    const productIds = d.lineItems.map((li) => li.productId)
+    const products = productIds.length
+      ? await prisma.product.findMany({
+          where: { id: { in: productIds }, organizationId: ctx.organizationId, deletedAt: null },
+          select: { id: true, sellingPrice: true, taxRate: true },
         })
-        const unitPrice = li.unitPrice ?? Number(product?.sellingPrice ?? 0)
-        const lineBase = li.quantity * unitPrice
-        let discountAmount = 0
-        if (li.discountType === 'PERCENT' && li.discountValue) {
-          discountAmount = (lineBase * li.discountValue) / 100
-        } else if (li.discountType === 'FLAT' && li.discountValue) {
-          discountAmount = li.discountValue
-        }
-        const taxRate = Number(product?.taxRate ?? 0)
-        const taxAmount = ((lineBase - discountAmount) * taxRate) / 100
-        const lineTotal = lineBase - discountAmount + taxAmount
-        return {
-          productId: li.productId,
-          quantity: li.quantity,
-          unitPrice,
-          discountType: li.discountType ?? null,
-          discountValue: li.discountValue ?? null,
-          discountAmount,
-          taxRate,
-          taxAmount,
-          lineTotal,
-        }
-      })
-    )
+      : []
+    const productMap = Object.fromEntries(products.map((p) => [p.id, p]))
+
+    const lineItemsWithTotals = d.lineItems.map((li) => {
+      const product = productMap[li.productId]
+      const unitPrice = li.unitPrice ?? Number(product?.sellingPrice ?? 0)
+      const lineBase = li.quantity * unitPrice
+      let discountAmount = 0
+      if (li.discountType === 'PERCENT' && li.discountValue) {
+        discountAmount = (lineBase * li.discountValue) / 100
+      } else if (li.discountType === 'FLAT' && li.discountValue) {
+        discountAmount = li.discountValue
+      }
+      const taxRate = Number(product?.taxRate ?? 0)
+      const taxAmount = ((lineBase - discountAmount) * taxRate) / 100
+      return {
+        productId: li.productId,
+        quantity: li.quantity,
+        unitPrice,
+        discountType: li.discountType ?? null,
+        discountValue: li.discountValue ?? null,
+        discountAmount,
+        taxRate,
+        taxAmount,
+        lineTotal: lineBase - discountAmount + taxAmount,
+      }
+    })
 
     const subtotal = lineItemsWithTotals.reduce(
       (s, li) => s + li.quantity * li.unitPrice - li.discountAmount,

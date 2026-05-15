@@ -23,11 +23,22 @@ const createSchema = z.object({
 
 export async function GET(req: NextRequest) {
   return withTenantApi(req, 'invoices:read', async ({ ctx }) => {
-    const templates = await prisma.invoiceTemplate.findMany({
-      where: { organizationId: ctx.organizationId, deletedAt: null },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-    })
-    return apiOk(templates)
+    const url = new URL(req.url)
+    const page = Math.max(1, Number(url.searchParams.get('page') ?? 1))
+    const pageSize = Math.min(50, Number(url.searchParams.get('pageSize') ?? 50))
+
+    const where = { organizationId: ctx.organizationId, deletedAt: null }
+    const [templates, total] = await Promise.all([
+      prisma.invoiceTemplate.findMany({
+        where,
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.invoiceTemplate.count({ where }),
+    ])
+
+    return apiOk({ data: templates, total, page, pageSize })
   })
 }
 

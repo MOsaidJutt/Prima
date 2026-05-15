@@ -21,8 +21,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Issue it if still a draft
     if (invoice.status === 'DRAFT') {
-      await prisma.invoice.update({
-        where: { id },
+      await prisma.invoice.updateMany({
+        where: { id, organizationId: ctx.organizationId },
         data: { status: 'ISSUED', lastModifiedBy: user.id },
       })
     }
@@ -40,8 +40,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       invoiceUrl,
     })
 
-    await prisma.invoice.update({
-      where: { id },
+    await prisma.invoice.updateMany({
+      where: { id, organizationId: ctx.organizationId },
       data: { emailSentAt: new Date(), lastModifiedBy: user.id },
     })
 

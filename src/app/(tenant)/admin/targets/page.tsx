@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { PlusCircle } from 'lucide-react'
 import { format } from 'date-fns'
+import { hasPermission } from '@/lib/permissions'
 
 function ProgressBar({ value, target }: { value: number; target: number }) {
   const pct = Math.min(100, target > 0 ? Math.round((value / target) * 100) : 0)
@@ -30,6 +31,13 @@ function ProgressBar({ value, target }: { value: number; target: number }) {
 export default async function TargetsPage() {
   const session = await getTenantSession()
   if (!session) redirect('/login')
+
+  const userWithRole = await prisma.user.findFirst({
+    where: { id: session.userId, organizationId: session.organizationId, deletedAt: null },
+    select: { role: { select: { permissions: true } } },
+  })
+  const perms = userWithRole?.role.permissions ?? []
+  const canCreate = hasPermission(perms, 'targets:create')
 
   const targets = await prisma.salesTarget.findMany({
     where: { organizationId: session.organizationId, deletedAt: null },
@@ -57,12 +65,14 @@ export default async function TargetsPage() {
           <h1 className="text-2xl font-bold">Sales Targets</h1>
           <p className="text-muted-foreground">{targets.length} total targets</p>
         </div>
-        <Button asChild>
-          <Link href="/admin/targets/new">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            New Target
-          </Link>
-        </Button>
+        {canCreate && (
+          <Button asChild>
+            <Link href="/admin/targets/new">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              New Target
+            </Link>
+          </Button>
+        )}
       </div>
 
       {targets.length === 0 ? (

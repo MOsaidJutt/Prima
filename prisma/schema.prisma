@@ -227,6 +227,7 @@ model Organization {
   paymentReminders     PaymentReminder[]
   salesTargets         SalesTarget[]
   performanceSnapshots PerformanceSnapshot[]
+  invoiceNumberSeq     InvoiceNumberSequence?
 
   @@index([slug])
   @@index([status])
@@ -1057,6 +1058,20 @@ model InvoiceTemplate {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// InvoiceNumberSequence
+// One row per organization. Incremented atomically via UPDATE ... RETURNING to
+// avoid the TOCTOU race in read-then-write sequence generation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model InvoiceNumberSequence {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @unique @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  seq            Int          @default(0)
+  updatedAt      DateTime     @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 3 Enums
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1174,6 +1189,7 @@ model DSREntry {
   lineItems DSRLineItem[]
 
   @@index([organizationId, deletedAt])
+  @@index([organizationId, status, deletedAt])
   @@index([submittedById])
   @@index([clientId])
   @@index([status])
@@ -1275,6 +1291,7 @@ model Invoice {
 
   @@unique([organizationId, invoiceNumber])
   @@index([organizationId, deletedAt])
+  @@index([organizationId, issueDate])
   @@index([clientId])
   @@index([status])
   @@index([dueDate])

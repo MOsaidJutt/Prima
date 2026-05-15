@@ -22,30 +22,39 @@ const createSchema = z.object({
 export async function GET(req: NextRequest) {
   return withTenantApi(req, 'targets:read', async ({ ctx }) => {
     const url = new URL(req.url)
+    const page = Math.max(1, Number(url.searchParams.get('page') ?? 1))
+    const pageSize = Math.min(100, Number(url.searchParams.get('pageSize') ?? 50))
     const scope = url.searchParams.get('scope') ?? ''
     const userId = url.searchParams.get('userId') ?? ''
     const active = url.searchParams.get('active')
 
-    const targets = await prisma.salesTarget.findMany({
-      where: {
-        organizationId: ctx.organizationId,
-        deletedAt: null,
-        ...(scope
-          ? { scope: scope as 'ORGANIZATION' | 'DEPARTMENT' | 'USER' | 'PRODUCT' | 'CLIENT' }
-          : {}),
-        ...(userId ? { userId } : {}),
-        ...(active === 'true' ? { isActive: true } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { id: true, name: true } },
-        department: { select: { id: true, name: true } },
-        product: { select: { id: true, name: true, sku: true } },
-        client: { select: { id: true, companyName: true, code: true } },
-      },
-    })
+    const where = {
+      organizationId: ctx.organizationId,
+      deletedAt: null,
+      ...(scope
+        ? { scope: scope as 'ORGANIZATION' | 'DEPARTMENT' | 'USER' | 'PRODUCT' | 'CLIENT' }
+        : {}),
+      ...(userId ? { userId } : {}),
+      ...(active === 'true' ? { isActive: true } : {}),
+    }
 
-    return apiOk(targets)
+    const [targets, total] = await Promise.all([
+      prisma.salesTarget.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          user: { select: { id: true, name: true } },
+          department: { select: { id: true, name: true } },
+          product: { select: { id: true, name: true, sku: true } },
+          client: { select: { id: true, companyName: true, code: true } },
+        },
+      }),
+      prisma.salesTarget.count({ where }),
+    ])
+
+    return apiOk({ data: targets, total, page, pageSize })
   })
 }
 

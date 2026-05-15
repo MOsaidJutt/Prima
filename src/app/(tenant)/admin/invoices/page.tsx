@@ -3,10 +3,10 @@ import { getTenantSession } from '@/lib/auth/session'
 import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { PlusCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { InvoiceStatusBadge } from '@/components/invoice/invoice-status-badge'
+import { hasPermission } from '@/lib/permissions'
 
 const STATUS_TABS = ['ALL', 'DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED']
 
@@ -17,6 +17,14 @@ export default async function InvoicesPage({
 }) {
   const session = await getTenantSession()
   if (!session) redirect('/login')
+
+  const userWithRole = await prisma.user.findFirst({
+    where: { id: session.userId, organizationId: session.organizationId, deletedAt: null },
+    select: { role: { select: { permissions: true } } },
+  })
+  const perms = userWithRole?.role.permissions ?? []
+  const canCreate = hasPermission(perms, 'invoices:create')
+  const canRecordPayment = hasPermission(perms, 'invoices:record_payment')
 
   const sp = await searchParams
   const page = Math.max(1, Number(sp.page ?? 1))
@@ -85,12 +93,14 @@ export default async function InvoicesPage({
           <h1 className="text-2xl font-bold">Invoices</h1>
           <p className="text-muted-foreground">{total} total</p>
         </div>
-        <Button asChild>
-          <Link href="/admin/invoices/new">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            New Invoice
-          </Link>
-        </Button>
+        {canCreate && (
+          <Button asChild>
+            <Link href="/admin/invoices/new">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              New Invoice
+            </Link>
+          </Button>
+        )}
       </div>
 
       {/* Aging summary */}

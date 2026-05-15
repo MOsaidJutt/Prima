@@ -6,10 +6,19 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PlusCircle, Pencil, Star } from 'lucide-react'
+import { hasPermission } from '@/lib/permissions'
 
 export default async function InvoiceTemplatesPage() {
   const session = await getTenantSession()
   if (!session) redirect('/login')
+
+  const userWithRole = await prisma.user.findFirst({
+    where: { id: session.userId, organizationId: session.organizationId, deletedAt: null },
+    select: { role: { select: { permissions: true } } },
+  })
+  const perms = userWithRole?.role.permissions ?? []
+  const canCreate = hasPermission(perms, 'invoices:create')
+  const canEdit = hasPermission(perms, 'invoices:update')
 
   const templates = await prisma.invoiceTemplate.findMany({
     where: { organizationId: session.organizationId, deletedAt: null },
@@ -23,12 +32,14 @@ export default async function InvoiceTemplatesPage() {
           <h1 className="text-2xl font-bold">Invoice Templates</h1>
           <p className="text-muted-foreground">Customize how your invoices look.</p>
         </div>
-        <Button asChild>
-          <Link href="/admin/settings/invoice-templates/new">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            New Template
-          </Link>
-        </Button>
+        {canCreate && (
+          <Button asChild>
+            <Link href="/admin/settings/invoice-templates/new">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              New Template
+            </Link>
+          </Button>
+        )}
       </div>
 
       {templates.length === 0 ? (
@@ -75,12 +86,14 @@ export default async function InvoiceTemplatesPage() {
                   <span>{t.taxLabel}</span>
                   {t.bankDetailsEnabled && <span>· Bank details</span>}
                 </div>
-                <Button variant="outline" size="sm" className="w-full" asChild>
-                  <Link href={`/admin/settings/invoice-templates/${t.id}/edit`}>
-                    <Pencil className="mr-2 h-3 w-3" />
-                    Edit
-                  </Link>
-                </Button>
+                {canEdit && (
+                  <Button variant="outline" size="sm" className="w-full" asChild>
+                    <Link href={`/admin/settings/invoice-templates/${t.id}/edit`}>
+                      <Pencil className="mr-2 h-3 w-3" />
+                      Edit
+                    </Link>
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

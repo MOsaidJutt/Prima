@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid'
 import { prisma } from '@/lib/prisma'
 import { sendPasswordReset } from '@/lib/email'
 import { checkPasswordResetRateLimit } from '@/lib/rate-limit'
+import { BCRYPT_ROUNDS_TOKEN } from '@/lib/constants'
 
 const requestSchema = z.object({ email: z.string().email() })
 
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
 
     const rawToken = nanoid(48)
     const tokenPrefix = rawToken.slice(0, 8)
-    const tokenHash = await bcrypt.hash(rawToken, 10)
+    const tokenHash = await bcrypt.hash(rawToken, BCRYPT_ROUNDS_TOKEN)
 
     await prisma.passwordResetToken.create({
       data: {

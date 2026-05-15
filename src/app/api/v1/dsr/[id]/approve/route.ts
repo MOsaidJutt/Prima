@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { withTenantApi, apiOk, apiError } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
+import { generateInvoiceNumber } from '@/lib/invoice-helpers'
 import { nanoid } from 'nanoid'
 
 const schema = z.object({
@@ -32,9 +33,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // All operations in a single transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Approve DSR
-      const approved = await tx.dSREntry.update({
-        where: { id },
+      // 1. Approve DSR — updateMany includes organizationId for defense-in-depth
+      await tx.dSREntry.updateMany({
+        where: { id, organizationId: ctx.organizationId },
         data: {
           status: 'APPROVED',
           approvedById: user.id,
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           lastModifiedBy: user.id,
         },
       })
+      const approved = await tx.dSREntry.findFirst({ where: { id } })
 
       // 2. Deduct inventory for each line item
       if (defaultWarehouse) {
@@ -79,29 +81,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // 3. Optionally create invoice draft
       let invoice = null
       if (createInvoice) {
-        // Generate sequential invoice number
-        const lastInvoice = await tx.invoice.findFirst({
-          where: { organizationId: ctx.organizationId },
-          orderBy: { createdAt: 'desc' },
-          select: { invoiceNumber: true },
-        })
-        const template = await tx.invoiceTemplate.findFirst({
+        // Atomic invoice number — no TOCTOU race
+        const invNum = await generateInvoiceNumber(ctx.organizationId, tx)
+        const defaultTemplate = await tx.invoiceTemplate.findFirst({
           where: { organizationId: ctx.organizationId, isDefault: true, deletedAt: null },
+          select: { id: true },
         })
-        const year = new Date().getFullYear()
-        const prefix = template?.invoiceNumberPrefix ?? 'INV'
-        const padding = template?.invoiceNumberPadding ?? 4
-        const includeYear = template?.invoiceNumberIncludeYear ?? true
-        let nextNum = 1
-        if (lastInvoice) {
-          const parts = lastInvoice.invoiceNumber.split('-')
-          const lastNum = parseInt(parts[parts.length - 1], 10)
-          if (!isNaN(lastNum)) nextNum = lastNum + 1
-        }
-        const invNum = includeYear
-          ? `${prefix}-${year}-${String(nextNum).padStart(padding, '0')}`
-          : `${prefix}-${String(nextNum).padStart(padding, '0')}`
-
         const paymentTerms = entry.client.paymentTerms ?? 30
         const dueDate = new Date(Date.now() + paymentTerms * 24 * 60 * 60 * 1000)
 
@@ -110,7 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             organizationId: ctx.organizationId,
             invoiceNumber: invNum,
             clientId: entry.clientId,
-            templateId: template?.id ?? null,
+            templateId: defaultTemplate?.id ?? null,
             dsrEntryId: id,
             status: 'DRAFT',
             issueDate: new Date(),
@@ -142,8 +127,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           },
         })
 
-        // Link invoice to DSR
-        await tx.dSREntry.update({ where: { id }, data: { invoiceId: invoice.id } })
+        // Link invoice to DSR — scoped updateMany for defense-in-depth
+        await tx.dSREntry.updateMany({
+          where: { id, organizationId: ctx.organizationId },
+          data: { invoiceId: invoice.id },
+        })
       }
 
       return { dsr: approved, invoice }

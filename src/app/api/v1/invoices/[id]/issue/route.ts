@@ -14,10 +14,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!invoice) return apiError('Invoice not found', 404)
     if (invoice.status !== 'DRAFT') return apiError('Only DRAFT invoices can be issued', 422)
 
-    const updated = await prisma.invoice.update({
-      where: { id },
+    await prisma.invoice.updateMany({
+      where: { id, organizationId: ctx.organizationId },
       data: { status: 'ISSUED', lastModifiedBy: user.id },
     })
+    const updated = await prisma.invoice.findFirst({ where: { id } })
 
     // Schedule payment reminders if due date set
     if (invoice.dueDate) {

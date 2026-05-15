@@ -12,7 +12,7 @@ interface GlobalErrorProps {
 
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
-    // Forward to Sentry when integrated (Phase 7)
+    import('@sentry/nextjs').then(({ captureException }) => captureException(error)).catch(() => {})
     console.error('[global-error-boundary]', error)
   }, [error])
 
