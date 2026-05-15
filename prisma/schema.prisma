@@ -220,6 +220,14 @@ model Organization {
   inventoryTransactions InventoryTransaction[]
   attachments           Attachment[]
 
+  // Phase 3 relations
+  dsrEntries           DSREntry[]
+  salesInvoices        Invoice[]
+  invoicePayments      Payment[]
+  paymentReminders     PaymentReminder[]
+  salesTargets         SalesTarget[]
+  performanceSnapshots PerformanceSnapshot[]
+
   @@index([slug])
   @@index([status])
   @@index([deletedAt])
@@ -379,6 +387,7 @@ model Department {
 
   users           User[]
   userInvitations UserInvitation[]
+  salesTargets    SalesTarget[]    @relation("DepartmentTargets")
 
   @@index([organizationId, deletedAt])
   @@index([parentId])
@@ -434,6 +443,14 @@ model User {
   // Phase 2
   assignedClients       Client[]               @relation("ClientRep")
   inventoryTransactions InventoryTransaction[] @relation("InventoryTxUser")
+
+  // Phase 3
+  submittedDSRs   DSREntry[]          @relation("DSRSubmittedBy")
+  approvedDSRs    DSREntry[]          @relation("DSRApprovedBy")
+  createdInvoices Invoice[]           @relation("InvoiceCreatedBy")
+  payments        Payment[]           @relation("PaymentRecordedBy")
+  salesTargets    SalesTarget[]       @relation("UserTargets")
+  snapshots       PerformanceSnapshot[] @relation("UserSnapshots")
 
   @@unique([organizationId, email])
   @@index([organizationId, deletedAt])
@@ -711,6 +728,9 @@ model Product {
 
   inventoryStock        InventoryStock[]
   inventoryTransactions InventoryTransaction[]
+  dsrLineItems          DSRLineItem[]           @relation("ProductDSRLines")
+  invoiceLineItems      InvoiceLineItem[]        @relation("ProductInvoiceLines")
+  salesTargets          SalesTarget[]            @relation("ProductTargets")
 
   @@unique([organizationId, sku])
   @@index([organizationId, deletedAt])
@@ -774,6 +794,7 @@ model Distributor {
   clients               Client[]
   attachments           Attachment[]           @relation("DistributorAttachments")
   inventoryTransactions InventoryTransaction[]
+  invoices              Invoice[]              @relation("DistributorInvoices")
 
   @@unique([organizationId, code])
   @@index([organizationId, deletedAt])
@@ -845,7 +866,10 @@ model Client {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  attachments Attachment[] @relation("ClientAttachments")
+  attachments  Attachment[]  @relation("ClientAttachments")
+  dsrEntries   DSREntry[]    @relation("ClientDSRs")
+  invoices     Invoice[]     @relation("ClientInvoices")
+  salesTargets SalesTarget[] @relation("ClientTargets")
 
   @@unique([organizationId, code])
   @@index([organizationId, deletedAt])
@@ -996,7 +1020,7 @@ model Attachment {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // InvoiceTemplate
-// Structure only — full invoicing logic in Phase 3. Sync-ready.
+// Full invoicing logic in Phase 3. Sync-ready.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model InvoiceTemplate {
@@ -1007,14 +1031,16 @@ model InvoiceTemplate {
   name      String
   isDefault Boolean @default(false)
 
-  headerHtml  String?
-  footerHtml  String?
-  logoUrl     String?
+  headerHtml   String?
+  footerHtml   String?
+  logoUrl      String?
   primaryColor String?
+  accentColor  String?
 
   taxLabel             String  @default("GST")
   invoiceNumberPrefix  String  @default("INV")
   invoiceNumberPadding Int     @default(4)
+  invoiceNumberIncludeYear Boolean @default(true)
 
   bankDetailsEnabled Boolean @default(true)
   bankDetails        Json?
@@ -1025,5 +1051,411 @@ model InvoiceTemplate {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
+  invoices Invoice[]
+
   @@index([organizationId, deletedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DSRStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum VisitType {
+  IN_PERSON
+  PHONE
+  VIRTUAL
+  EMAIL
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+  CHEQUE
+  CARD
+  WALLET
+  OTHER
+}
+
+enum TargetScope {
+  ORGANIZATION
+  DEPARTMENT
+  USER
+  PRODUCT
+  CLIENT
+}
+
+enum TargetType {
+  REVENUE
+  UNITS
+  VISITS
+  NEW_CLIENTS
+  COLLECTIONS
+}
+
+enum TargetPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum ReminderChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DSREntry
+// Daily Sales Report. Submitted by sales reps, approved by managers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DSREntry {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  submittedById String @db.Uuid
+  submittedBy   User   @relation("DSRSubmittedBy", fields: [submittedById], references: [id])
+
+  clientId String @db.Uuid
+  client   Client @relation("ClientDSRs", fields: [clientId], references: [id])
+
+  reportDate   DateTime
+  visitType    VisitType @default(IN_PERSON)
+  visitNotes   String?
+  outcome      String?
+  followUpDate DateTime?
+  satisfaction Int? // 1–5 stars
+
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+
+  status DSRStatus @default(DRAFT)
+
+  subtotal      Decimal @default(0) @db.Decimal(12, 2)
+  taxTotal      Decimal @default(0) @db.Decimal(12, 2)
+  discountTotal Decimal @default(0) @db.Decimal(12, 2)
+  grandTotal    Decimal @default(0) @db.Decimal(12, 2)
+
+  // Approval
+  approvedById    String?   @db.Uuid
+  approvedBy      User?     @relation("DSRApprovedBy", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  rejectionReason String?
+
+  // Generated invoice (if auto-create enabled)
+  invoiceId String? @db.Uuid
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  lineItems DSRLineItem[]
+
+  @@index([organizationId, deletedAt])
+  @@index([submittedById])
+  @@index([clientId])
+  @@index([status])
+  @@index([reportDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DSRLineItem
+// Line items inside a DSR. Immutable after approval.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DSRLineItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  dsrEntryId String   @db.Uuid
+  dsrEntry   DSREntry @relation(fields: [dsrEntryId], references: [id])
+
+  productId String  @db.Uuid
+  product   Product @relation("ProductDSRLines", fields: [productId], references: [id])
+
+  quantity Int
+  unitPrice Decimal @db.Decimal(10, 2)
+
+  discountType   String? // "PERCENT" | "FLAT"
+  discountValue  Decimal? @db.Decimal(10, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(10, 2)
+
+  taxRate   Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount Decimal @default(0) @db.Decimal(10, 2)
+
+  lineTotal Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dsrEntryId])
+  @@index([productId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invoice
+// Full invoice lifecycle: Draft → Issued → Partially Paid → Paid / Overdue / Cancelled.
+// Invoice numbers generated server-side only (offline clients cannot create numbers).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Invoice {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  invoiceNumber String // server-generated; format driven by InvoiceTemplate
+
+  clientId String @db.Uuid
+  client   Client @relation("ClientInvoices", fields: [clientId], references: [id])
+
+  distributorId String?      @db.Uuid
+  distributor   Distributor? @relation("DistributorInvoices", fields: [distributorId], references: [id])
+
+  templateId String?          @db.Uuid
+  template   InvoiceTemplate? @relation(fields: [templateId], references: [id])
+
+  dsrEntryId String? @db.Uuid // set when auto-created from approved DSR
+
+  status InvoiceStatus @default(DRAFT)
+
+  issueDate DateTime  @default(now())
+  dueDate   DateTime?
+
+  subtotal      Decimal @default(0) @db.Decimal(12, 2)
+  taxTotal      Decimal @default(0) @db.Decimal(12, 2)
+  discountTotal Decimal @default(0) @db.Decimal(12, 2)
+  shippingAmount Decimal @default(0) @db.Decimal(12, 2)
+  grandTotal    Decimal @default(0) @db.Decimal(12, 2)
+  paidAmount    Decimal @default(0) @db.Decimal(12, 2)
+
+  notes String?
+  terms String?
+
+  // Email tracking
+  emailSentAt   DateTime?
+  openedAt      DateTime?
+  trackingToken String?   @unique
+
+  // PDF cache
+  pdfUrl         String?
+  pdfGeneratedAt DateTime?
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  lineItems InvoiceLineItem[]
+  payments  Payment[]
+  reminders PaymentReminder[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId, deletedAt])
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([trackingToken])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InvoiceLineItem
+// ─────────────────────────────────────────────────────────────────────────────
+
+model InvoiceLineItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  invoiceId String  @db.Uuid
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  productId   String?  @db.Uuid
+  product     Product? @relation("ProductInvoiceLines", fields: [productId], references: [id])
+
+  description String
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(10, 2)
+
+  discountType   String?
+  discountValue  Decimal? @db.Decimal(10, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(10, 2)
+
+  taxRate   Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount Decimal @default(0) @db.Decimal(10, 2)
+
+  lineTotal Decimal @db.Decimal(12, 2)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payment
+// Partial payments are allowed; Invoice.paidAmount tracks cumulative total.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Payment {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  invoiceId String  @db.Uuid
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  amount      Decimal       @db.Decimal(12, 2)
+  paymentDate DateTime      @default(now())
+  method      PaymentMethod @default(CASH)
+
+  referenceNumber String?
+  bankDetails     Json?
+  receiptUrl      String?
+  notes           String?
+
+  recordedById String? @db.Uuid
+  recordedBy   User?   @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([organizationId, deletedAt])
+  @@index([invoiceId])
+  @@index([paymentDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PaymentReminder
+// Auto-generated by BullMQ cron. Tracks what was sent and when.
+// daysOffset: negative = before due date, positive = days after due.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PaymentReminder {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+
+  invoiceId String  @db.Uuid
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  channel     ReminderChannel @default(EMAIL)
+  scheduledAt DateTime
+  sentAt      DateTime?
+  status      String          @default("PENDING") // PENDING | SENT | FAILED
+
+  template    String?
+  messageBody String?
+  daysOffset  Int // -3 = 3 days before due; +7 = 7 days overdue
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@index([scheduledAt, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SalesTarget
+// Multi-scope targets auto-updated from DSR + Invoice data via BullMQ jobs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SalesTarget {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name   String
+  scope  TargetScope
+  type   TargetType
+  period TargetPeriod
+
+  userId       String?     @db.Uuid
+  user         User?       @relation("UserTargets", fields: [userId], references: [id])
+  departmentId String?     @db.Uuid
+  department   Department? @relation("DepartmentTargets", fields: [departmentId], references: [id])
+  productId    String?     @db.Uuid
+  product      Product?    @relation("ProductTargets", fields: [productId], references: [id])
+  clientId     String?     @db.Uuid
+  client       Client?     @relation("ClientTargets", fields: [clientId], references: [id])
+
+  targetValue   Decimal @db.Decimal(12, 2)
+  achievedValue Decimal @default(0) @db.Decimal(12, 2)
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  customPeriodLabel String?
+  isActive          Boolean @default(true)
+
+  deletedAt          DateTime?
+  lastModifiedBy     String?
+  lastModifiedDevice String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([organizationId, deletedAt])
+  @@index([scope])
+  @@index([userId])
+  @@index([departmentId])
+  @@index([periodStart, periodEnd])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PerformanceSnapshot
+// Daily aggregate per user, generated by BullMQ job every midnight.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PerformanceSnapshot {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  userId String? @db.Uuid
+  user   User?   @relation("UserSnapshots", fields: [userId], references: [id])
+
+  snapshotDate DateTime
+
+  dsrCount      Int     @default(0)
+  approvedDSRs  Int     @default(0)
+  rejectedDSRs  Int     @default(0)
+  totalRevenue  Decimal @default(0) @db.Decimal(12, 2)
+  totalInvoiced Decimal @default(0) @db.Decimal(12, 2)
+  totalCollected Decimal @default(0) @db.Decimal(12, 2)
+  newClients    Int     @default(0)
+  visitCount    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, userId, snapshotDate])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([snapshotDate])
 }

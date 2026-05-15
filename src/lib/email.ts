@@ -100,6 +100,140 @@ export async function sendPasswordReset({
   })
 }
 
+// ── Invoice email ─────────────────────────────────────────────────────────────
+
+export async function sendInvoiceEmail({
+  to,
+  clientName,
+  orgName,
+  invoiceNumber,
+  grandTotal,
+  dueDate,
+  invoiceUrl,
+}: {
+  to: string
+  clientName: string
+  orgName: string
+  invoiceNumber: string
+  grandTotal: number
+  dueDate?: Date
+  invoiceUrl: string
+}) {
+  const dueLine = dueDate
+    ? `<br/>Payment is due by <strong>${dueDate.toLocaleDateString('en-PK')}</strong>.`
+    : ''
+
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Invoice ${invoiceNumber} from ${orgName}`,
+    html: emailHtml({
+      heading: `Invoice ${invoiceNumber}`,
+      preheader: `You have a new invoice of PKR ${grandTotal.toLocaleString()} from ${orgName}`,
+      body: `Hi ${clientName},<br/><br/>
+        Please find your invoice <strong>${invoiceNumber}</strong> from <strong>${orgName}</strong>.<br/>
+        <strong>Amount Due: PKR ${grandTotal.toLocaleString()}</strong>${dueLine}`,
+      ctaText: 'View Invoice',
+      ctaHref: invoiceUrl,
+      footer: 'If you have any questions about this invoice, please contact us.',
+    }),
+  })
+}
+
+// ── Payment receipt ───────────────────────────────────────────────────────────
+
+export async function sendPaymentReceiptEmail({
+  to,
+  clientName,
+  orgName,
+  invoiceNumber,
+  amount,
+  paymentDate,
+  method,
+  balance,
+}: {
+  to: string
+  clientName: string
+  orgName: string
+  invoiceNumber: string
+  amount: number
+  paymentDate: Date
+  method: string
+  balance: number
+}) {
+  const balanceLine =
+    balance > 0.01
+      ? `<br/>Remaining balance: <strong>PKR ${balance.toLocaleString()}</strong>`
+      : '<br/><strong>Invoice is now fully paid. Thank you!</strong>'
+
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Payment received for Invoice ${invoiceNumber}`,
+    html: emailHtml({
+      heading: 'Payment Received',
+      preheader: `Payment of PKR ${amount.toLocaleString()} received`,
+      body: `Hi ${clientName},<br/><br/>
+        We have received your payment of <strong>PKR ${amount.toLocaleString()}</strong>
+        on ${paymentDate.toLocaleDateString('en-PK')} via ${method}
+        for Invoice <strong>${invoiceNumber}</strong>.${balanceLine}`,
+      ctaText: 'View Invoice',
+      ctaHref: `${APP_URL}/admin/invoices`,
+      footer: `Issued by ${orgName}. Thank you for your business.`,
+    }),
+  })
+}
+
+// ── Payment reminder ──────────────────────────────────────────────────────────
+
+export async function sendPaymentReminderEmail({
+  to,
+  clientName,
+  orgName,
+  invoiceNumber,
+  balance,
+  dueDate,
+  daysOffset,
+}: {
+  to: string
+  clientName: string
+  orgName: string
+  invoiceNumber: string
+  balance: number
+  dueDate?: Date
+  daysOffset: number
+}) {
+  const isOverdue = daysOffset > 0
+  const isDueToday = daysOffset === 0
+  const subject = isOverdue
+    ? `OVERDUE: Invoice ${invoiceNumber} — ${daysOffset} days past due`
+    : isDueToday
+      ? `Payment due today: Invoice ${invoiceNumber}`
+      : `Upcoming payment: Invoice ${invoiceNumber} due in ${Math.abs(daysOffset)} days`
+
+  const bodyLine = isOverdue
+    ? `Your invoice <strong>${invoiceNumber}</strong> is now <strong>${daysOffset} days overdue</strong>.`
+    : isDueToday
+      ? `Your invoice <strong>${invoiceNumber}</strong> is due <strong>today</strong>.`
+      : `Your invoice <strong>${invoiceNumber}</strong> is due in <strong>${Math.abs(daysOffset)} days</strong>${dueDate ? ` (${dueDate.toLocaleDateString('en-PK')})` : ''}.`
+
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject,
+    html: emailHtml({
+      heading: isOverdue ? 'Payment Overdue' : 'Payment Reminder',
+      preheader: subject,
+      body: `Hi ${clientName},<br/><br/>
+        ${bodyLine}<br/>
+        Amount outstanding: <strong>PKR ${balance.toLocaleString()}</strong>`,
+      ctaText: 'Pay Now',
+      ctaHref: APP_URL,
+      footer: `Sent by ${orgName}. Reply to this email if you have any questions.`,
+    }),
+  })
+}
+
 // ── Shared HTML template ──────────────────────────────────────────────────────
 
 function emailHtml({

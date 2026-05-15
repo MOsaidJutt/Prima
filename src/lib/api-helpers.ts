@@ -117,3 +117,6 @@ export async function generateEntityCode(
   const nextNum = isNaN(lastNum) ? 1 : lastNum + 1
   return `${prefix}-${String(nextNum).padStart(4, '0')}`
 }
+
+// Re-export schedulePaymentReminders so other modules don't import from queues directly
+export { schedulePaymentReminders } from '@/lib/queues'

@@ -10,6 +10,13 @@ import {
   BusinessSize,
   ProductStatus,
   InventoryTxType,
+  DSRStatus,
+  VisitType,
+  InvoiceStatus,
+  PaymentMethod,
+  TargetScope,
+  TargetType,
+  TargetPeriod,
 } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { DEFAULT_ROLES } from '../src/lib/permissions'
@@ -294,6 +301,10 @@ async function main() {
   // ── Phase 2: Business Entities for TechCorp (active org) ─────────────────────
   await seedPhase2(activeOrg.id, activeAdmin.id, activeRoles)
   console.log('\n✅ Phase 2 business entities seeded for TechCorp')
+
+  // ── Phase 3: DSR + Invoicing for TechCorp ──────────────────────────────────
+  await seedPhase3(activeOrg.id, activeAdmin.id, activeRoles)
+  console.log('✅ Phase 3 DSR + Invoicing seeded for TechCorp')
 
   console.log('\n🎉 Seed complete!')
   console.log('──────────────────────────────────────────────')
@@ -643,6 +654,360 @@ async function seedPhase2(orgId: string, adminId: string, roles: Record<string, 
   console.log(
     `   └─ ${warehouseData.length} warehouses, ${catData.length} categories, ${productData.length} products, ${distData.length} distributors, ${clientData.length} clients`
   )
+}
+
+// ── Phase 3 seeder ─────────────────────────────────────────────────────────────
+
+async function seedPhase3(orgId: string, adminId: string, roles: Record<string, string>) {
+  const reps = await prisma.user.findMany({
+    where: { organizationId: orgId, roleId: roles['Sales Rep'], deletedAt: null },
+    select: { id: true },
+  })
+  const managers = await prisma.user.findMany({
+    where: { organizationId: orgId, roleId: roles['Manager'], deletedAt: null },
+    select: { id: true },
+  })
+  const repIds = reps.map((r) => r.id)
+  const managerId = managers[0]?.id ?? adminId
+
+  const clients = await prisma.client.findMany({
+    where: { organizationId: orgId, deletedAt: null },
+    select: { id: true },
+  })
+  const products = await prisma.product.findMany({
+    where: { organizationId: orgId, deletedAt: null },
+    select: { id: true, sellingPrice: true, taxRate: true },
+  })
+
+  if (!clients.length || !products.length || !repIds.length) return
+
+  // ── Default Invoice Template ────────────────────────────────────────────────
+  const existingTemplate = await prisma.invoiceTemplate.findFirst({
+    where: { organizationId: orgId, isDefault: true, deletedAt: null },
+  })
+  const template =
+    existingTemplate ??
+    (await prisma.invoiceTemplate.create({
+      data: {
+        organizationId: orgId,
+        name: 'Standard Template',
+        isDefault: true,
+        taxLabel: 'GST',
+        invoiceNumberPrefix: 'INV',
+        invoiceNumberPadding: 4,
+        invoiceNumberIncludeYear: true,
+        bankDetailsEnabled: false,
+        lastModifiedBy: adminId,
+      },
+    }))
+
+  // ── Sales Targets ───────────────────────────────────────────────────────────
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+
+  const existingTarget = await prisma.salesTarget.findFirst({
+    where: { organizationId: orgId, name: 'Monthly Revenue Target', deletedAt: null },
+  })
+  if (!existingTarget) {
+    await prisma.salesTarget.create({
+      data: {
+        organizationId: orgId,
+        name: 'Monthly Revenue Target',
+        scope: TargetScope.ORGANIZATION,
+        type: TargetType.REVENUE,
+        period: TargetPeriod.MONTHLY,
+        targetValue: 500000,
+        achievedValue: 0,
+        periodStart: monthStart,
+        periodEnd: monthEnd,
+        lastModifiedBy: adminId,
+      },
+    })
+    for (const repId of repIds) {
+      await prisma.salesTarget.create({
+        data: {
+          organizationId: orgId,
+          name: 'Monthly Sales Target',
+          scope: TargetScope.USER,
+          type: TargetType.REVENUE,
+          period: TargetPeriod.MONTHLY,
+          userId: repId,
+          targetValue: 200000,
+          achievedValue: 0,
+          periodStart: monthStart,
+          periodEnd: monthEnd,
+          lastModifiedBy: adminId,
+        },
+      })
+    }
+  }
+
+  // ── 90 Days of Historical DSR + Invoice + Payment Data ──────────────────────
+  const DAYS = 90
+  let invoiceSeq = 1
+
+  for (let d = DAYS; d >= 1; d--) {
+    const reportDate = new Date(Date.now() - d * 24 * 60 * 60 * 1000)
+    reportDate.setHours(10, 0, 0, 0)
+
+    // Each rep submits 1–2 DSRs per weekday
+    const dayOfWeek = reportDate.getDay()
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue // skip weekends
+
+    for (const repId of repIds) {
+      // 70% chance of a DSR on any given day
+      if (Math.random() > 0.7) continue
+
+      const clientId = clients[Math.floor(Math.random() * clients.length)].id
+      const visitTypes = Object.values(VisitType)
+      const visitType = visitTypes[Math.floor(Math.random() * visitTypes.length)]
+
+      // 2–4 line items per DSR
+      const lineItemCount = Math.floor(Math.random() * 3) + 2
+      const selectedProducts = [...products].sort(() => Math.random() - 0.5).slice(0, lineItemCount)
+
+      let subtotal = 0
+      let taxTotal = 0
+      const lineItemsData = selectedProducts.map((p) => {
+        const qty = Math.floor(Math.random() * 10) + 1
+        const unitPrice = Number(p.sellingPrice)
+        const taxRate = Number(p.taxRate)
+        const lineBase = qty * unitPrice
+        const taxAmt = Math.round(((lineBase * taxRate) / 100) * 100) / 100
+        const lineTotal = lineBase + taxAmt
+        subtotal += lineBase
+        taxTotal += taxAmt
+        return { productId: p.id, qty, unitPrice, taxRate, taxAmt, lineTotal }
+      })
+      const grandTotal = subtotal + taxTotal
+
+      // Check if already seeded for this rep+date
+      const existing = await prisma.dSREntry.findFirst({
+        where: {
+          organizationId: orgId,
+          submittedById: repId,
+          reportDate,
+          deletedAt: null,
+        },
+      })
+      if (existing) continue
+
+      // All historical DSRs are APPROVED
+      const dsr = await prisma.dSREntry.create({
+        data: {
+          organizationId: orgId,
+          submittedById: repId,
+          clientId,
+          reportDate,
+          visitType,
+          visitNotes: 'Routine visit, discussed product availability.',
+          outcome: 'Order placed',
+          satisfaction: Math.floor(Math.random() * 2) + 4, // 4 or 5 stars
+          status: DSRStatus.APPROVED,
+          subtotal,
+          taxTotal,
+          discountTotal: 0,
+          grandTotal,
+          approvedById: managerId,
+          approvedAt: new Date(reportDate.getTime() + 3 * 60 * 60 * 1000),
+          lastModifiedBy: adminId,
+          lineItems: {
+            create: lineItemsData.map((li) => ({
+              productId: li.productId,
+              quantity: li.qty,
+              unitPrice: li.unitPrice,
+              taxRate: li.taxRate,
+              taxAmount: li.taxAmt,
+              lineTotal: li.lineTotal,
+            })),
+          },
+        },
+      })
+
+      // Create approved invoice for each DSR (60% chance)
+      if (Math.random() > 0.4) {
+        const year = reportDate.getFullYear()
+        const invNumber = `INV-${year}-${String(invoiceSeq).padStart(4, '0')}`
+        invoiceSeq++
+
+        const daysUntilDue = 30
+        const dueDate = new Date(reportDate.getTime() + daysUntilDue * 24 * 60 * 60 * 1000)
+        const isPaid = Math.random() > 0.3
+
+        const invoice = await prisma.invoice.create({
+          data: {
+            organizationId: orgId,
+            invoiceNumber: invNumber,
+            clientId,
+            templateId: template.id,
+            dsrEntryId: dsr.id,
+            status: isPaid
+              ? InvoiceStatus.PAID
+              : dueDate < now
+                ? InvoiceStatus.OVERDUE
+                : InvoiceStatus.ISSUED,
+            issueDate: reportDate,
+            dueDate,
+            subtotal,
+            taxTotal,
+            discountTotal: 0,
+            shippingAmount: 0,
+            grandTotal,
+            paidAmount: isPaid ? grandTotal : 0,
+            createdById: adminId,
+            lastModifiedBy: adminId,
+            lineItems: {
+              create: lineItemsData.map((li, idx) => ({
+                productId: li.productId,
+                description: 'Product sale',
+                quantity: li.qty,
+                unitPrice: li.unitPrice,
+                taxRate: li.taxRate,
+                taxAmount: li.taxAmt,
+                lineTotal: li.lineTotal,
+                sortOrder: idx,
+              })),
+            },
+          },
+        })
+
+        // Record payment for paid invoices
+        if (isPaid) {
+          const paymentDate = new Date(
+            reportDate.getTime() + Math.floor(Math.random() * 20 + 1) * 24 * 60 * 60 * 1000
+          )
+          await prisma.payment.create({
+            data: {
+              organizationId: orgId,
+              invoiceId: invoice.id,
+              amount: grandTotal,
+              paymentDate,
+              method: PaymentMethod.BANK,
+              notes: 'Historical payment',
+              recordedById: adminId,
+              lastModifiedBy: adminId,
+            },
+          })
+        }
+
+        // Link DSR to invoice
+        await prisma.dSREntry.update({
+          where: { id: dsr.id },
+          data: { invoiceId: invoice.id },
+        })
+      }
+    }
+  }
+
+  // ── Performance Snapshots (last 30 days) ────────────────────────────────────
+  for (let d = 30; d >= 1; d--) {
+    const snapshotDate = new Date(Date.now() - d * 24 * 60 * 60 * 1000)
+    snapshotDate.setHours(0, 0, 0, 0)
+
+    for (const repId of repIds) {
+      const existing = await prisma.performanceSnapshot.findFirst({
+        where: { organizationId: orgId, userId: repId, snapshotDate },
+      })
+      if (existing) continue
+
+      const dayDSRs = await prisma.dSREntry.findMany({
+        where: {
+          organizationId: orgId,
+          submittedById: repId,
+          reportDate: { gte: snapshotDate, lt: new Date(snapshotDate.getTime() + 86400000) },
+          deletedAt: null,
+        },
+        include: { lineItems: true },
+      })
+
+      const approvedCount = dayDSRs.filter((d) => d.status === DSRStatus.APPROVED).length
+      const revenue = dayDSRs
+        .filter((d) => d.status === DSRStatus.APPROVED)
+        .reduce((sum, d) => sum + Number(d.grandTotal), 0)
+
+      await prisma.performanceSnapshot.create({
+        data: {
+          organizationId: orgId,
+          userId: repId,
+          snapshotDate,
+          dsrCount: dayDSRs.length,
+          approvedDSRs: approvedCount,
+          rejectedDSRs: 0,
+          totalRevenue: revenue,
+          totalInvoiced: revenue,
+          totalCollected: revenue * 0.7,
+          visitCount: dayDSRs.length,
+        },
+      })
+    }
+  }
+
+  // Update client balances based on invoices
+  const clientsWithInvoices = await prisma.client.findMany({
+    where: { organizationId: orgId, deletedAt: null },
+    include: {
+      invoices: {
+        where: {
+          deletedAt: null,
+          status: {
+            in: [InvoiceStatus.ISSUED, InvoiceStatus.OVERDUE, InvoiceStatus.PARTIALLY_PAID],
+          },
+        },
+        select: { grandTotal: true, paidAmount: true },
+      },
+    },
+  })
+  for (const client of clientsWithInvoices) {
+    const outstanding = client.invoices.reduce(
+      (sum, inv) => sum + (Number(inv.grandTotal) - Number(inv.paidAmount)),
+      0
+    )
+    const totalOrders = await prisma.invoice.count({
+      where: { organizationId: orgId, clientId: client.id, deletedAt: null },
+    })
+    const allInvoices = await prisma.invoice.findMany({
+      where: { organizationId: orgId, clientId: client.id, deletedAt: null },
+      select: { grandTotal: true, issueDate: true },
+      orderBy: { issueDate: 'asc' },
+    })
+    const ltv = allInvoices.reduce((sum, i) => sum + Number(i.grandTotal), 0)
+    const aov = totalOrders > 0 ? ltv / totalOrders : 0
+    await prisma.client.update({
+      where: { id: client.id },
+      data: {
+        currentBalance: outstanding,
+        totalOrders,
+        totalLifetimeValue: ltv,
+        averageOrderValue: aov,
+        firstOrderDate: allInvoices[0]?.issueDate,
+        lastOrderDate: allInvoices[allInvoices.length - 1]?.issueDate,
+      },
+    })
+  }
+
+  // Update target achieved values
+  const salesTargets = await prisma.salesTarget.findMany({
+    where: { organizationId: orgId, deletedAt: null, type: TargetType.REVENUE },
+  })
+  for (const target of salesTargets) {
+    const invoiceSum = await prisma.invoice.aggregate({
+      where: {
+        organizationId: orgId,
+        ...(target.userId ? { createdById: target.userId } : {}),
+        issueDate: { gte: target.periodStart, lte: target.periodEnd },
+        status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID] },
+        deletedAt: null,
+      },
+      _sum: { grandTotal: true },
+    })
+    await prisma.salesTarget.update({
+      where: { id: target.id },
+      data: { achievedValue: invoiceSum._sum.grandTotal ?? 0 },
+    })
+  }
+
+  console.log(`   └─ 90 days DSRs, invoices, payments, snapshots, targets seeded`)
 }
 
 main()

@@ -23,6 +23,10 @@ import {
   Warehouse,
   ChevronDown,
   ChevronRight,
+  FileText,
+  Target,
+  Receipt,
+  LayoutTemplate,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -44,6 +48,9 @@ const tenantAdminNav: NavItem[] = [
   { label: 'Clients', href: '/admin/clients', icon: Users, slug: 'clients:read' },
   { label: 'Products', href: '/admin/products', icon: Package, slug: 'products:read' },
   { label: 'Inventory', href: '/admin/inventory', icon: Warehouse, slug: 'inventory:read' },
+  // Phase 3 — DSR & Invoicing
+  { label: 'Invoices', href: '/admin/invoices', icon: FileText, slug: 'invoices:read' },
+  { label: 'Targets', href: '/admin/targets', icon: Target, slug: 'targets:read' },
   // Phase 1 — Team
   { label: 'Users', href: '/admin/users', icon: Users, slug: 'users:read' },
   { label: 'Roles', href: '/admin/settings/roles', icon: Shield, slug: 'roles:read' },
@@ -52,6 +59,12 @@ const tenantAdminNav: NavItem[] = [
     href: '/admin/settings/departments',
     icon: FolderOpen,
     slug: 'departments:read',
+  },
+  {
+    label: 'Inv. Templates',
+    href: '/admin/settings/invoice-templates',
+    icon: LayoutTemplate,
+    slug: 'invoices:read',
   },
   { label: 'Branding', href: '/admin/settings/branding', icon: Palette, slug: 'branding:update' },
   {
@@ -72,6 +85,8 @@ const tenantAdminNav: NavItem[] = [
 const managerNav: NavItem[] = [
   { label: 'Dashboard', href: '/manager', icon: LayoutDashboard },
   { label: 'Pending DSRs', href: '/manager/dsr/pending', icon: BarChart3 },
+  { label: 'Invoices', href: '/admin/invoices', icon: FileText },
+  { label: 'Targets', href: '/admin/targets', icon: Target },
 ]
 
 const salesRepNav: NavItem[] = [

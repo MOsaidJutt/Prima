@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PermissionGate } from '@/components/permission-gate'
+import { ClientFinancialsTab } from '@/components/client-financials-tab'
 import { ChevronLeft, Edit, Trash2, Phone, Mail, MapPin, AlertTriangle, Clock } from 'lucide-react'
 import { differenceInDays } from 'date-fns'
 
@@ -195,11 +196,16 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="attachments">Attachments ({client.attachments.length})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="financials" className="space-y-4 pt-4">
+          <ClientFinancialsTab clientId={id} creditLimit={client.creditLimit} />
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-4 pt-4">
           <div className="grid gap-4 sm:grid-cols-2">
