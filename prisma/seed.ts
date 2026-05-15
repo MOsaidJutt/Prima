@@ -681,6 +681,13 @@ async function seedPhase3(orgId: string, adminId: string, roles: Record<string, 
 
   if (!clients.length || !products.length || !repIds.length) return
 
+  // Idempotent guard — skip if Phase 3 data already exists for this org
+  const existingInvoiceCount = await prisma.invoice.count({ where: { organizationId: orgId } })
+  if (existingInvoiceCount > 0) {
+    console.log('   └─ Phase 3 data already seeded, skipping')
+    return
+  }
+
   // ── Default Invoice Template ────────────────────────────────────────────────
   const existingTemplate = await prisma.invoiceTemplate.findFirst({
     where: { organizationId: orgId, isDefault: true, deletedAt: null },

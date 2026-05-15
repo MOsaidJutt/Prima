@@ -24,18 +24,23 @@ export async function superAdminLogin(email: string, password: string) {
   })
 
   if (!admin || !admin.isActive) {
-    // L-5: log failed login attempt (fire-and-forget; never block the response)
-    prisma.platformAuditLog
-      .create({
-        data: {
-          action: 'LOGIN_FAILED',
-          entity: 'SuperAdmin',
-          newValue: { email: email.toLowerCase().trim(), reason: 'not found or inactive' },
-          ipAddress: ip,
-          superAdminId: admin?.id ?? (await getPlatformOwnerIdForAudit()),
-        },
-      })
-      .catch(() => {})
+    // Only log to PlatformAuditLog when we have a valid admin ID to attach;
+    // if the email doesn't belong to any super admin at all, skip the log
+    // (no foreign key to reference — borrowing another admin's ID is misleading).
+    if (admin) {
+      prisma.platformAuditLog
+        .create({
+          data: {
+            action: 'LOGIN_FAILED',
+            entity: 'SuperAdmin',
+            entityId: admin.id,
+            newValue: { reason: 'account inactive' },
+            ipAddress: ip,
+            superAdminId: admin.id,
+          },
+        })
+        .catch(() => {})
+    }
     return { error: 'Invalid credentials' as const }
   }
 
@@ -91,15 +96,6 @@ export async function superAdminLogin(email: string, password: string) {
   cookieStore.set(opts.name, opts.value, opts)
 
   return { success: true }
-}
-
-// Fallback for audit log when no admin is found: use the owner account
-async function getPlatformOwnerIdForAudit(): Promise<string> {
-  const owner = await prisma.superAdmin.findFirst({
-    where: { role: 'OWNER', deletedAt: null },
-    select: { id: true },
-  })
-  return owner?.id ?? 'unknown'
 }
 
 export async function superAdminLogout() {
