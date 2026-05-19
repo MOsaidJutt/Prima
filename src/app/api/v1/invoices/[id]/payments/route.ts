@@ -5,6 +5,7 @@ import { withTenantApi, apiOk, apiError } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { sendPaymentReceiptEmail } from '@/lib/email'
+import { recalculatePaymentScore } from '@/lib/ai/payment-scoring'
 
 const createSchema = z.object({
   amount: z.number().positive(),
@@ -104,6 +105,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       newValue: { amount: d.amount, method: d.method, invoiceStatus: newStatus },
       req,
     })
+
+    // Recalculate payment behavior score asynchronously (non-blocking)
+    recalculatePaymentScore(invoice.client.id, ctx.organizationId).catch(() => {})
 
     // Optional receipt email
     if (d.sendReceipt && invoice.client.email) {

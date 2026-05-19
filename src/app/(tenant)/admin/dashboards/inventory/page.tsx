@@ -186,7 +186,7 @@ export default async function InventoryDashboardPage({
             bars={[{ key: 'value', label: 'Units', color: '#0369A1' }]}
           />
         </div>
-        <AIInsightsCard title="AI Demand Forecast" />
+        <AIInsightsCard />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

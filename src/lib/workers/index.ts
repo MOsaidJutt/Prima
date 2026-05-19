@@ -14,11 +14,17 @@ import { startInvoiceOverdueWorker } from './invoice-overdue'
 import { startPaymentReminderWorker } from './payment-reminder'
 import { startPerformanceSnapshotWorker } from './performance-snapshot'
 import { matviewRefreshWorker } from './matview-refresh'
+import { startInventoryPredictionWorker, inventoryPredictionQueue } from './inventory-prediction'
+import { startDormantClientWorker, dormantClientQueue } from './dormant-client'
+import { startAnomalyDetectionWorker, anomalyDetectionQueue } from './anomaly-detection'
 
 // Start all workers
 const overdueWorker = startInvoiceOverdueWorker()
 const reminderWorker = startPaymentReminderWorker()
 const snapshotWorker = startPerformanceSnapshotWorker()
+const inventoryPredictionWorker = startInventoryPredictionWorker()
+const dormantClientWorker = startDormantClientWorker()
+const anomalyDetectionWorker = startAnomalyDetectionWorker()
 // matviewRefreshWorker is started on import
 
 // Register recurring cron jobs
@@ -56,6 +62,39 @@ async function registerCrons() {
     }
   )
 
+  // Inventory demand predictions — every night at 03:00 UTC
+  await inventoryPredictionQueue.add(
+    'run-predictions',
+    {},
+    {
+      repeat: { pattern: '0 3 * * *' },
+      jobId: 'inventory-prediction-cron',
+      removeOnComplete: true,
+    }
+  )
+
+  // Dormant client detection — every day at 04:00 UTC
+  await dormantClientQueue.add(
+    'detect-dormant',
+    {},
+    {
+      repeat: { pattern: '0 4 * * *' },
+      jobId: 'dormant-client-cron',
+      removeOnComplete: true,
+    }
+  )
+
+  // Anomaly detection — every 6 hours
+  await anomalyDetectionQueue.add(
+    'detect-anomalies',
+    {},
+    {
+      repeat: { pattern: '0 */6 * * *' },
+      jobId: 'anomaly-detection-cron',
+      removeOnComplete: true,
+    }
+  )
+
   console.log('[workers] Cron jobs registered')
 }
 
@@ -70,6 +109,9 @@ process.on('SIGTERM', async () => {
     reminderWorker.close(),
     snapshotWorker.close(),
     matviewRefreshWorker.close(),
+    inventoryPredictionWorker.close(),
+    dormantClientWorker.close(),
+    anomalyDetectionWorker.close(),
   ])
   process.exit(0)
 })

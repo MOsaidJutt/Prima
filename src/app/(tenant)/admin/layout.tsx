@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { UserProvider } from '@/context/user-context'
 import { hexToHsl } from '@/lib/utils'
+import { ChatFloat } from '@/components/ai/chat-float'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getTenantSession()
@@ -89,6 +90,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         userAvatar={user.avatar}
       >
         {children}
+        <ChatFloat />
       </DashboardLayout>
     </UserProvider>
   )

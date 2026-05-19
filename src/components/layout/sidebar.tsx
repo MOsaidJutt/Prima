@@ -31,6 +31,9 @@ import {
   DollarSign,
   LineChart,
   PieChart,
+  Brain,
+  MessageSquare,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -82,6 +85,9 @@ const tenantAdminNav: NavItem[] = [
   // Phase 3 — DSR & Invoicing
   { label: 'Invoices', href: '/admin/invoices', icon: FileText, slug: 'invoices:read' },
   { label: 'Targets', href: '/admin/targets', icon: Target, slug: 'targets:read' },
+  // Phase 5 — AI
+  { label: 'AI Assistant', href: '/admin/ai-assistant', icon: MessageSquare },
+  { label: 'AI Insights', href: '/admin/recommendations', icon: Brain },
   // Phase 1 — Team
   { label: 'Users', href: '/admin/users', icon: Users, slug: 'users:read' },
   { label: 'Roles', href: '/admin/settings/roles', icon: Shield, slug: 'roles:read' },
@@ -110,6 +116,7 @@ const tenantAdminNav: NavItem[] = [
     icon: ClipboardList,
     slug: 'audit_log:read',
   },
+  { label: 'AI Settings', href: '/admin/settings/ai', icon: Sparkles, slug: 'settings:view' },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ]
 

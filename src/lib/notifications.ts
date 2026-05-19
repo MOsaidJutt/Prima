@@ -11,6 +11,8 @@ export type NotificationType =
   | 'dsr_rejected' // Phase 3
   | 'invoice_overdue' // Phase 3
   | 'ai_insight' // Phase 5
+  | 'ai_budget_exhausted' // Phase 5
+  | 'ai_recommendation' // Phase 5
 
 export async function createNotification(opts: {
   organizationId: string

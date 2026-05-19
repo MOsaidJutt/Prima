@@ -18,6 +18,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
+import { SummarizeButton } from '@/components/ai/summarize-button'
 
 const CHART_COLORS = [
   '#0369A1',
@@ -41,9 +42,20 @@ interface BaseCardProps {
   loading?: boolean
   children: React.ReactNode
   action?: React.ReactNode
+  widgetKey?: string
+  widgetData?: Record<string, unknown>
 }
 
-function ChartCard({ title, description, className, loading, children, action }: BaseCardProps) {
+function ChartCard({
+  title,
+  description,
+  className,
+  loading,
+  children,
+  action,
+  widgetKey,
+  widgetData,
+}: BaseCardProps) {
   return (
     <div className={cn('bg-card border-border rounded-lg border p-5 shadow-sm', className)}>
       <div className="mb-4 flex items-start justify-between">
@@ -51,7 +63,12 @@ function ChartCard({ title, description, className, loading, children, action }:
           <h3 className="text-sm font-semibold">{title}</h3>
           {description && <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>}
         </div>
-        {action}
+        <div className="flex items-center gap-1">
+          {widgetKey && widgetData && !loading && (
+            <SummarizeButton widgetKey={widgetKey} widgetTitle={title} data={widgetData} />
+          )}
+          {action}
+        </div>
       </div>
       {loading ? <ChartSkeleton /> : children}
     </div>
@@ -74,6 +91,7 @@ interface LineChartCardProps {
   loading?: boolean
   action?: React.ReactNode
   yPrefix?: string
+  widgetKey?: string
 }
 
 export function LineChartCard({
@@ -85,6 +103,7 @@ export function LineChartCard({
   loading,
   action,
   yPrefix,
+  widgetKey,
 }: LineChartCardProps) {
   return (
     <ChartCard
@@ -93,6 +112,8 @@ export function LineChartCard({
       className={className}
       loading={loading}
       action={action}
+      widgetKey={widgetKey}
+      widgetData={data.length > 0 ? { data, lines } : undefined}
     >
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
@@ -154,6 +175,7 @@ interface BarChartCardProps {
   action?: React.ReactNode
   yPrefix?: string
   layout?: 'horizontal' | 'vertical'
+  widgetKey?: string
 }
 
 export function BarChartCard({
@@ -166,6 +188,7 @@ export function BarChartCard({
   action,
   yPrefix,
   layout = 'horizontal',
+  widgetKey,
 }: BarChartCardProps) {
   return (
     <ChartCard
@@ -174,6 +197,8 @@ export function BarChartCard({
       className={className}
       loading={loading}
       action={action}
+      widgetKey={widgetKey}
+      widgetData={data.length > 0 ? { data, bars } : undefined}
     >
       <ResponsiveContainer width="100%" height={240}>
         <BarChart

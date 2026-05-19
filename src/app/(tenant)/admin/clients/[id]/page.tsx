@@ -10,7 +10,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PermissionGate } from '@/components/permission-gate'
 import { ClientFinancialsTab } from '@/components/client-financials-tab'
-import { ChevronLeft, Edit, Trash2, Phone, Mail, MapPin, AlertTriangle, Clock } from 'lucide-react'
+import { UpsellTab } from '@/components/ai/upsell-tab'
+import { PaymentBehaviorBadge } from '@/components/ai/payment-behavior-badge'
+import {
+  ChevronLeft,
+  Edit,
+  Trash2,
+  Phone,
+  Mail,
+  MapPin,
+  AlertTriangle,
+  Clock,
+  Sparkles,
+} from 'lucide-react'
 import { differenceInDays } from 'date-fns'
 
 type Client = {
@@ -155,13 +167,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             {client.paymentBehaviorScore != null ? (
               <div>
                 <p className="text-xl font-bold">{client.paymentBehaviorScore}</p>
-                {client.paymentBehaviorLabel && (
-                  <span
-                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${SCORE_LABEL_COLORS[client.paymentBehaviorLabel] ?? ''}`}
-                  >
-                    {client.paymentBehaviorLabel}
-                  </span>
-                )}
+                <PaymentBehaviorBadge
+                  score={client.paymentBehaviorScore}
+                  label={client.paymentBehaviorLabel}
+                />
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">Computed in Phase 6</p>
@@ -199,6 +208,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
+          <TabsTrigger value="suggested" className="gap-1.5">
+            <Sparkles className="h-3 w-3" />
+            Suggested
+          </TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="attachments">Attachments ({client.attachments.length})</TabsTrigger>
         </TabsList>
@@ -297,6 +310,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           <p className="text-muted-foreground py-12 text-center text-sm">
             Invoice history will be available after Phase 3.
           </p>
+        </TabsContent>
+
+        <TabsContent value="suggested" className="pt-4">
+          <UpsellTab clientId={id} />
         </TabsContent>
 
         <TabsContent value="notes" className="pt-4">

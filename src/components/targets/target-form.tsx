@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
+import { TargetAISuggestion } from '@/components/ai/target-ai-suggestion'
 import {
   format,
   startOfMonth,
@@ -221,7 +222,20 @@ export function TargetForm({ users, departments, products, clients, defaultValue
           )}
 
           <div className="space-y-2">
-            <Label>Target Value</Label>
+            <div className="flex items-center justify-between">
+              <Label>Target Value</Label>
+              <TargetAISuggestion
+                scope={watch('scope')}
+                type={watch('type')}
+                period={watch('period')}
+                userId={watch('userId')}
+                departmentId={watch('departmentId')}
+                productId={watch('productId')}
+                clientId={watch('clientId')}
+                proposedTarget={watch('targetValue')}
+                onAccept={(v) => setValue('targetValue', v)}
+              />
+            </div>
             <Input
               type="number"
               step="0.01"
