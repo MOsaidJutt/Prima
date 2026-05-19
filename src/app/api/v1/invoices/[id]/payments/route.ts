@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { sendPaymentReceiptEmail } from '@/lib/email'
 import { recalculatePaymentScore } from '@/lib/ai/payment-scoring'
+import { cacheDel, dashboardKey } from '@/lib/dashboard-cache'
 
 const createSchema = z.object({
   amount: z.number().positive(),
@@ -108,6 +109,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Recalculate payment behavior score asynchronously (non-blocking)
     recalculatePaymentScore(invoice.client.id, ctx.organizationId).catch(() => {})
+
+    // Invalidate financial dashboard caches
+    void cacheDel(dashboardKey(ctx.organizationId, 'executive'))
+    void cacheDel(dashboardKey(ctx.organizationId, 'financial'))
+    void cacheDel(dashboardKey(ctx.organizationId, 'clients'))
 
     // Optional receipt email
     if (d.sendReceipt && invoice.client.email) {

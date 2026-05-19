@@ -215,15 +215,24 @@ export function startInventoryPredictionWorker() {
       const { orgId } = job.data as { orgId?: string }
 
       if (orgId) {
-        await runPredictionForOrg(orgId)
+        try {
+          await runPredictionForOrg(orgId)
+        } catch (err) {
+          console.error(`[inventory-prediction] org ${orgId} failed:`, err)
+          throw err // re-throw so BullMQ marks job as failed and retries
+        }
       } else {
-        // Run for all AI-enabled orgs
         const orgs = await prisma.organization.findMany({
           where: { aiEnabled: true, deletedAt: null },
           select: { id: true },
         })
         for (const org of orgs) {
-          await runPredictionForOrg(org.id)
+          try {
+            await runPredictionForOrg(org.id)
+          } catch (err) {
+            console.error(`[inventory-prediction] org ${org.id} failed:`, err)
+            // continue with next org rather than aborting the whole batch
+          }
         }
       }
     },

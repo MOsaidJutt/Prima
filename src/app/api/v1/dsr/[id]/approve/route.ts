@@ -4,6 +4,7 @@ import { withTenantApi, apiOk, apiError } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { generateInvoiceNumber } from '@/lib/invoice-helpers'
+import { cacheDel, dashboardKey } from '@/lib/dashboard-cache'
 import { nanoid } from 'nanoid'
 
 const schema = z.object({
@@ -146,6 +147,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       newValue: { status: 'APPROVED', invoiceId: result.invoice?.id },
       req,
     })
+
+    // Invalidate dashboards that show DSR/sales/inventory data
+    void cacheDel(dashboardKey(ctx.organizationId, 'executive'))
+    void cacheDel(dashboardKey(ctx.organizationId, 'sales'))
+    void cacheDel(dashboardKey(ctx.organizationId, 'inventory'))
 
     return apiOk(result)
   })

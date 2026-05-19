@@ -87,6 +87,7 @@ export default function ProductsPage() {
       .then((r) => r.json())
       .then((d) => setCategories(d.categories ?? []))
   }, [])
+
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     fetchData(1)

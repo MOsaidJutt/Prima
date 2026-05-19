@@ -25,7 +25,7 @@ const settingsSchema = z.object({
 })
 
 export async function GET(req: NextRequest) {
-  return withTenantApi(req, 'organization:read', async ({ ctx }) => {
+  return withTenantApi(req, 'organization:update', async ({ ctx }) => {
     const org = await prisma.organization.findUnique({
       where: { id: ctx.organizationId },
       select: {

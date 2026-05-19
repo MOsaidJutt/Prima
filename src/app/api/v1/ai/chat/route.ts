@@ -73,7 +73,12 @@ export async function POST(req: NextRequest) {
   const lastUserMsg = messages[messages.length - 1]
   if (lastUserMsg?.role === 'user') {
     await prisma.aIMessage.create({
-      data: { conversationId: convId, role: 'user', content: lastUserMsg.content },
+      data: {
+        conversationId: convId,
+        organizationId: orgId,
+        role: 'user',
+        content: lastUserMsg.content,
+      },
     })
   }
 
@@ -96,6 +101,7 @@ Current date: ${new Date().toLocaleDateString('en-PK')}.`
       await prisma.aIMessage.create({
         data: {
           conversationId: convId!,
+          organizationId: orgId,
           role: 'assistant',
           content: text,
           inputTokens: usage?.inputTokens ?? 0,

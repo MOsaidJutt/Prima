@@ -44,8 +44,8 @@ export default function TransferPage() {
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!productId || !fromWarehouseId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFromStock(null)
       return
     }

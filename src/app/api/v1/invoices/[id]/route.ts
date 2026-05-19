@@ -111,7 +111,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const updated = await prisma.invoice.update({
-      where: { id },
+      where: { id, organizationId: ctx.organizationId },
       data: {
         ...(d.clientId ? { clientId: d.clientId } : {}),
         ...(d.distributorId !== undefined ? { distributorId: d.distributorId } : {}),
@@ -160,7 +160,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return apiError('Only DRAFT or CANCELLED invoices can be deleted', 422)
 
     await prisma.invoice.update({
-      where: { id },
+      where: { id, organizationId: ctx.organizationId },
       data: { deletedAt: new Date(), lastModifiedBy: user.id },
     })
     await createAuditLog({

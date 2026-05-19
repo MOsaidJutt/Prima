@@ -3,6 +3,7 @@ import { withTenantApi, apiOk, apiError } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { schedulePaymentReminders } from '@/lib/queues'
+import { cacheDel, dashboardKey } from '@/lib/dashboard-cache'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return withTenantApi(req, 'invoices:update', async ({ ctx, user }) => {
@@ -18,7 +19,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id, organizationId: ctx.organizationId },
       data: { status: 'ISSUED', lastModifiedBy: user.id },
     })
-    const updated = await prisma.invoice.findFirst({ where: { id } })
+    const updated = await prisma.invoice.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+    })
 
     // Schedule payment reminders if due date set
     if (invoice.dueDate) {
@@ -34,6 +37,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       newValue: { status: 'ISSUED' },
       req,
     })
+
+    // Invalidate dashboard caches that include revenue figures
+    void cacheDel(dashboardKey(ctx.organizationId, 'executive'))
+    void cacheDel(dashboardKey(ctx.organizationId, 'financial'))
+    void cacheDel(dashboardKey(ctx.organizationId, 'sales'))
 
     return apiOk(updated)
   })

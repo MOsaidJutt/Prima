@@ -299,14 +299,23 @@ export function startAnomalyDetectionWorker() {
     async (job) => {
       const { orgId } = job.data as { orgId?: string }
       if (orgId) {
-        await runAnomalyDetection(orgId)
+        try {
+          await runAnomalyDetection(orgId)
+        } catch (err) {
+          console.error(`[anomaly-detection] org ${orgId} failed:`, err)
+          throw err
+        }
       } else {
         const orgs = await prisma.organization.findMany({
           where: { aiEnabled: true, deletedAt: null },
           select: { id: true },
         })
         for (const org of orgs) {
-          await runAnomalyDetection(org.id)
+          try {
+            await runAnomalyDetection(org.id)
+          } catch (err) {
+            console.error(`[anomaly-detection] org ${org.id} failed:`, err)
+          }
         }
       }
     },

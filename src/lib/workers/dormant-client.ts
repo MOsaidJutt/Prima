@@ -116,14 +116,23 @@ export function startDormantClientWorker() {
     async (job) => {
       const { orgId } = job.data as { orgId?: string }
       if (orgId) {
-        await runDormantClientDetection(orgId)
+        try {
+          await runDormantClientDetection(orgId)
+        } catch (err) {
+          console.error(`[dormant-client] org ${orgId} failed:`, err)
+          throw err
+        }
       } else {
         const orgs = await prisma.organization.findMany({
           where: { aiEnabled: true, deletedAt: null },
           select: { id: true },
         })
         for (const org of orgs) {
-          await runDormantClientDetection(org.id)
+          try {
+            await runDormantClientDetection(org.id)
+          } catch (err) {
+            console.error(`[dormant-client] org ${org.id} failed:`, err)
+          }
         }
       }
     },

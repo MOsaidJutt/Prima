@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withTenantApi, apiOk, apiError } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/lib/audit'
 import { generateInvoiceNumber } from '@/lib/invoice-helpers'
 import { nanoid } from 'nanoid'
 
@@ -57,6 +58,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           })),
         },
       },
+    })
+
+    await createAuditLog({
+      organizationId: ctx.organizationId,
+      userId: user.id,
+      action: 'CREATE',
+      entity: 'Invoice',
+      entityId: copy.id,
+      newValue: { invoiceNumber: copy.invoiceNumber, duplicatedFrom: id },
+      req,
     })
 
     return apiOk(copy, 201)

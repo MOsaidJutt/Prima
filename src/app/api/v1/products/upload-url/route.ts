@@ -14,8 +14,12 @@ export async function POST(req: NextRequest) {
     if (!filename || !contentType) {
       return NextResponse.json({ error: 'filename and contentType required' }, { status: 400 })
     }
-    if (!contentType.startsWith('image/')) {
-      return NextResponse.json({ error: 'Only images allowed' }, { status: 400 })
+    const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+    if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+      return NextResponse.json(
+        { error: 'Only JPEG, PNG, WebP, or GIF images are allowed' },
+        { status: 400 }
+      )
     }
     if (sizeBytes && sizeBytes > 5 * 1024 * 1024) {
       return NextResponse.json({ error: 'Image must be under 5MB' }, { status: 400 })

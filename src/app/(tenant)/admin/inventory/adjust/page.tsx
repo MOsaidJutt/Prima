@@ -48,8 +48,8 @@ function AdjustForm() {
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!productId || !warehouseId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentStock(null)
       return
     }

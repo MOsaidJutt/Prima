@@ -18,7 +18,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id, organizationId: ctx.organizationId },
       data: { status: 'CANCELLED', lastModifiedBy: user.id },
     })
-    const updated = await prisma.invoice.findFirst({ where: { id } })
+    const updated = await prisma.invoice.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+    })
 
     await createAuditLog({
       organizationId: ctx.organizationId,

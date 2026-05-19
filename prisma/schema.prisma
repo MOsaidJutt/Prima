@@ -887,6 +887,7 @@ model Client {
   @@index([status])
   @@index([distributorId])
   @@index([assignedRepId])
+  @@index([organizationId, assignedRepId])
   @@index([city])
 }
 
@@ -1303,6 +1304,7 @@ model Invoice {
   @@index([organizationId, deletedAt])
   @@index([organizationId, issueDate])
   @@index([clientId])
+  @@index([createdById])
   @@index([status])
   @@index([dueDate])
   @@index([trackingToken])
@@ -1373,6 +1375,7 @@ model Payment {
   updatedAt          DateTime  @updatedAt
 
   @@index([organizationId, deletedAt])
+  @@index([organizationId, invoiceId])
   @@index([invoiceId])
   @@index([paymentDate])
 }
@@ -1595,10 +1598,11 @@ model AIRecommendation {
   actedOnAt      DateTime?
   actedOnBy      String?   @db.Uuid
 
-  expiresAt DateTime? // auto-expire stale recommendations
+  expiresAt DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  lastModifiedBy String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([organizationId, status])
   @@index([organizationId, type])
@@ -1620,9 +1624,10 @@ model AIConversation {
   userId String @db.Uuid
   title  String @default("New Conversation")
 
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  deletedAt      DateTime?
+  lastModifiedBy String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   messages AIMessage[]
 
@@ -1640,9 +1645,12 @@ model AIMessage {
   conversationId String         @db.Uuid
   conversation   AIConversation @relation(fields: [conversationId], references: [id])
 
+  // Redundant but required — prevents cross-org message injection if conversationId leaks
+  organizationId String @db.Uuid
+
   role    String // "user" | "assistant" | "tool"
   content String
-  toolCalls Json? // array of tool call objects from the model
+  toolCalls Json?
 
   inputTokens  Int @default(0)
   outputTokens Int @default(0)
@@ -1651,6 +1659,7 @@ model AIMessage {
   updatedAt DateTime @updatedAt
 
   @@index([conversationId])
+  @@index([organizationId])
   @@index([createdAt])
 }
 

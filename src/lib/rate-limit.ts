@@ -61,16 +61,23 @@ function getIP(req: Request): string {
 }
 
 // Returns a 429 NextResponse if rate limited; null if the request may proceed.
-// If Upstash is not configured (e.g. local dev without Redis), rate limiting
-// is skipped with a warning rather than blocking all requests.
+// In production, Upstash MUST be configured. Missing env vars throw at startup rather
+// than silently disabling protection — security over availability.
+
+function assertUpstashOrThrow(context: string) {
+  if (!isUpstashConfigured() && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      `[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set — ${context} rate limiting cannot be disabled in production. ` +
+        'Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.'
+    )
+  }
+}
 
 // IP-based overload: used by server actions that don't have a Request object.
 export async function checkLoginRateLimitByIP(ip: string): Promise<{ error: string } | null> {
   if (!isUpstashConfigured()) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error('[rate-limit] UPSTASH not set — login rate limiting disabled in production')
-    }
-    return null
+    assertUpstashOrThrow('login')
+    return null // only reached in non-production
   }
   const { success } = await getLoginLimiter().limit(ip)
   if (!success) return { error: 'Too many login attempts. Please wait a minute and try again.' }
@@ -79,12 +86,8 @@ export async function checkLoginRateLimitByIP(ip: string): Promise<{ error: stri
 
 export async function checkLoginRateLimit(req: Request): Promise<NextResponse | null> {
   if (!isUpstashConfigured()) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error(
-        '[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set — login rate limiting disabled in production'
-      )
-    }
-    return null
+    assertUpstashOrThrow('login')
+    return null // only reached in non-production
   }
   const ip = getIP(req)
   const { success, limit, remaining, reset } = await getLoginLimiter().limit(ip)
@@ -119,12 +122,8 @@ export async function checkApiRateLimit(userId: string): Promise<NextResponse | 
 
 export async function checkPasswordResetRateLimit(req: Request): Promise<NextResponse | null> {
   if (!isUpstashConfigured()) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error(
-        '[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set — password-reset rate limiting disabled in production'
-      )
-    }
-    return null
+    assertUpstashOrThrow('password-reset')
+    return null // only reached in non-production
   }
   const ip = getIP(req)
   const { success, limit, remaining, reset } = await getPasswordResetLimiter().limit(ip)
