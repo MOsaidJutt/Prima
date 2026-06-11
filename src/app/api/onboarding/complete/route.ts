@@ -62,11 +62,17 @@ export async function POST(request: Request) {
         .map((e) => e.trim().toLowerCase())
         .filter((e) => e.includes('@'))
 
+      // Single query for all existing users instead of one findFirst per email
+      const existingEmails = new Set(
+        (
+          await prisma.user.findMany({
+            where: { organizationId, email: { in: emails }, deletedAt: null },
+            select: { email: true },
+          })
+        ).map((u) => u.email)
+      )
       for (const email of emails) {
-        const existing = await prisma.user.findFirst({
-          where: { organizationId, email, deletedAt: null },
-        })
-        if (!existing) {
+        if (!existingEmails.has(email)) {
           const rawToken = nanoid(48)
           const tokenPrefix = rawToken.slice(0, 8)
           const tokenHash = await bcrypt.hash(rawToken, BCRYPT_ROUNDS_TOKEN)

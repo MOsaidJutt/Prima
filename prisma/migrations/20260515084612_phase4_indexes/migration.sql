@@ -1,36 +1,39 @@
 -- Phase 4 Performance Indexes
 -- These indexes optimize dashboard aggregation queries
+-- Phase 7 repair: CONCURRENTLY removed — it cannot run inside the transaction
+-- Prisma wraps migrations in, so `migrate deploy` on a fresh DB would fail.
+-- (On the already-migrated dev DB the indexes exist; IF NOT EXISTS no-ops.)
 
 -- DSREntry: filter by org+date+status (dashboard queries)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "DSREntry_org_date_idx" ON "DSREntry"("organizationId", "reportDate" DESC, "deletedAt");
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "DSREntry_org_submitted_date_idx" ON "DSREntry"("organizationId", "submittedById", "reportDate" DESC, "deletedAt");
+CREATE INDEX IF NOT EXISTS "DSREntry_org_date_idx" ON "DSREntry"("organizationId", "reportDate" DESC, "deletedAt");
+CREATE INDEX IF NOT EXISTS "DSREntry_org_submitted_date_idx" ON "DSREntry"("organizationId", "submittedById", "reportDate" DESC, "deletedAt");
 
 -- Invoice: filter by org+date+status (revenue aggregations)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Invoice_org_issueDate_idx" ON "Invoice"("organizationId", "issueDate" DESC, "deletedAt");
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Invoice_org_status_idx" ON "Invoice"("organizationId", "status", "deletedAt");
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Invoice_org_createdBy_date_idx" ON "Invoice"("organizationId", "createdById", "issueDate" DESC, "deletedAt");
+CREATE INDEX IF NOT EXISTS "Invoice_org_issueDate_idx" ON "Invoice"("organizationId", "issueDate" DESC, "deletedAt");
+CREATE INDEX IF NOT EXISTS "Invoice_org_status_idx" ON "Invoice"("organizationId", "status", "deletedAt");
+CREATE INDEX IF NOT EXISTS "Invoice_org_createdBy_date_idx" ON "Invoice"("organizationId", "createdById", "issueDate" DESC, "deletedAt");
 
 -- Payment: filter by org+date (collections)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Payment_org_date_idx" ON "Payment"("organizationId", "paymentDate" DESC, "deletedAt");
+CREATE INDEX IF NOT EXISTS "Payment_org_date_idx" ON "Payment"("organizationId", "paymentDate" DESC, "deletedAt");
 
 -- Client: filter by org+status (dashboard counts)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Client_org_status_createdAt_idx" ON "Client"("organizationId", "status", "createdAt" DESC, "deletedAt");
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Client_org_ltv_idx" ON "Client"("organizationId", "totalLifetimeValue" DESC, "deletedAt");
+CREATE INDEX IF NOT EXISTS "Client_org_status_createdAt_idx" ON "Client"("organizationId", "status", "createdAt" DESC, "deletedAt");
+CREATE INDEX IF NOT EXISTS "Client_org_ltv_idx" ON "Client"("organizationId", "totalLifetimeValue" DESC, "deletedAt");
 
 -- Distributor: filter by org+status+tier
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Distributor_org_status_tier_idx" ON "Distributor"("organizationId", "status", "tier", "deletedAt");
+CREATE INDEX IF NOT EXISTS "Distributor_org_status_tier_idx" ON "Distributor"("organizationId", "status", "tier", "deletedAt");
 
 -- InventoryStock: filter by org+product
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "InventoryStock_org_product_idx" ON "InventoryStock"("organizationId", "productId");
+CREATE INDEX IF NOT EXISTS "InventoryStock_org_product_idx" ON "InventoryStock"("organizationId", "productId");
 
 -- InventoryTransaction: filter by org+date
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "InventoryTransaction_org_createdAt_idx" ON "InventoryTransaction"("organizationId", "createdAt" DESC);
+CREATE INDEX IF NOT EXISTS "InventoryTransaction_org_createdAt_idx" ON "InventoryTransaction"("organizationId", "createdAt" DESC);
 
 -- PerformanceSnapshot: filter by org+userId+date (EPR queries)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "PerformanceSnapshot_org_user_date_idx" ON "PerformanceSnapshot"("organizationId", "userId", "snapshotDate" DESC);
+CREATE INDEX IF NOT EXISTS "PerformanceSnapshot_org_user_date_idx" ON "PerformanceSnapshot"("organizationId", "userId", "snapshotDate" DESC);
 
 -- User: filter by org+active+dept
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "User_org_active_dept_idx" ON "User"("organizationId", "isActive", "departmentId", "deletedAt");
+CREATE INDEX IF NOT EXISTS "User_org_active_dept_idx" ON "User"("organizationId", "isActive", "departmentId", "deletedAt");
 
 -- Materialized views for dashboard aggregations
 -- Daily revenue per org

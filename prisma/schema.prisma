@@ -535,6 +535,7 @@ model User {
   @@index([organizationId, deletedAt])
   @@index([roleId])
   @@index([departmentId])
+  @@index([organizationId, isActive, departmentId, deletedAt], map: "User_org_active_dept_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -880,6 +881,7 @@ model Distributor {
   @@index([organizationId, deletedAt])
   @@index([status])
   @@index([city])
+  @@index([organizationId, status, tier, deletedAt], map: "Distributor_org_status_tier_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -958,6 +960,8 @@ model Client {
   @@index([assignedRepId])
   @@index([organizationId, assignedRepId])
   @@index([city])
+  @@index([organizationId, status, createdAt(sort: Desc), deletedAt], map: "Client_org_status_createdAt_idx")
+  @@index([organizationId, totalLifetimeValue(sort: Desc), deletedAt], map: "Client_org_ltv_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1018,6 +1022,7 @@ model InventoryStock {
   @@index([organizationId])
   @@index([productId])
   @@index([warehouseId])
+  @@index([organizationId, productId], map: "InventoryStock_org_product_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1064,6 +1069,7 @@ model InventoryTransaction {
   @@index([fromWarehouseId])
   @@index([toWarehouseId])
   @@index([type])
+  @@index([organizationId, createdAt(sort: Desc)], map: "InventoryTransaction_org_createdAt_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1274,6 +1280,10 @@ model DSREntry {
   @@index([clientId])
   @@index([status])
   @@index([reportDate])
+  // Phase 4 perf indexes (raw SQL in 20260515084612) declared here so Prisma
+  // migrate diff knows about them and never generates DROP INDEX for them
+  @@index([organizationId, reportDate(sort: Desc), deletedAt], map: "DSREntry_org_date_idx")
+  @@index([organizationId, submittedById, reportDate(sort: Desc), deletedAt], map: "DSREntry_org_submitted_date_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1377,6 +1387,9 @@ model Invoice {
   @@index([status])
   @@index([dueDate])
   @@index([trackingToken])
+  @@index([organizationId, issueDate(sort: Desc), deletedAt], map: "Invoice_org_issueDate_idx")
+  @@index([organizationId, status, deletedAt], map: "Invoice_org_status_idx")
+  @@index([organizationId, createdById, issueDate(sort: Desc), deletedAt], map: "Invoice_org_createdBy_date_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1447,6 +1460,7 @@ model Payment {
   @@index([organizationId, invoiceId])
   @@index([invoiceId])
   @@index([paymentDate])
+  @@index([organizationId, paymentDate(sort: Desc), deletedAt], map: "Payment_org_date_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1557,6 +1571,7 @@ model PerformanceSnapshot {
   @@index([organizationId])
   @@index([userId])
   @@index([snapshotDate])
+  @@index([organizationId, userId, snapshotDate(sort: Desc)], map: "PerformanceSnapshot_org_user_date_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
