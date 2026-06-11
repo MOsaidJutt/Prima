@@ -4,21 +4,9 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 // Cloudflare R2 is S3-compatible. Endpoint format:
 // https://<account-id>.r2.cloudflarestorage.com
 
-// Guard at module init — fail loudly in production if credentials are missing.
-// In development the guard is skipped so the module can be imported without R2
-// credentials (upload calls will fail at call time with a clear error).
-if (process.env.NODE_ENV === 'production') {
-  if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
-    throw new Error('CLOUDFLARE_ACCOUNT_ID environment variable is required in production')
-  }
-  if (!process.env.R2_ACCESS_KEY_ID) {
-    throw new Error('R2_ACCESS_KEY_ID environment variable is required in production')
-  }
-  if (!process.env.R2_SECRET_ACCESS_KEY) {
-    throw new Error('R2_SECRET_ACCESS_KEY environment variable is required in production')
-  }
-}
-
+// Credentials are validated at call time in getClient() rather than at module
+// init: `next build` runs with NODE_ENV=production but does not (and should
+// not) require live R2 credentials to compile pages that import this module.
 const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? ''
 const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID ?? ''
 const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY ?? ''

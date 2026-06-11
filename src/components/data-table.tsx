@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ChevronUp, ChevronDown, ChevronsUpDown, Columns, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import * as XLSX from 'xlsx'
 
 export type ColumnDef<T> = {
   key: string
@@ -109,21 +108,36 @@ export function DataTable<T extends { id: string }>({
     }
   }
 
-  function handleExport() {
-    const rows = sorted.map((row) =>
-      Object.fromEntries(
-        columns.map((col) => [
-          col.label,
-          col.exportValue
-            ? col.exportValue(row)
-            : String((row as Record<string, unknown>)[col.key] ?? ''),
-        ])
+  async function handleExport() {
+    // exceljs is loaded on demand so the ~400 KB library stays out of the
+    // shared bundle — export is a rare action relative to page loads.
+    const ExcelJS = (await import('exceljs')).default
+    const visibleColumns = columns
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Sheet1')
+    ws.columns = visibleColumns.map((col) => ({ header: col.label, key: col.key }))
+    for (const row of sorted) {
+      ws.addRow(
+        Object.fromEntries(
+          visibleColumns.map((col) => [
+            col.key,
+            col.exportValue
+              ? col.exportValue(row)
+              : String((row as Record<string, unknown>)[col.key] ?? ''),
+          ])
+        )
       )
-    )
-    const ws = XLSX.utils.json_to_sheet(rows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
-    XLSX.writeFile(wb, `${exportFilename}.xlsx`)
+    }
+    const buffer = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${exportFilename}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   function SortIcon({ col }: { col: ColumnDef<T> }) {

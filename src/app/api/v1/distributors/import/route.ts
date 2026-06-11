@@ -1,11 +1,10 @@
 import { NextRequest } from 'next/server'
 import { withTenantApi, apiOk, apiError, generateEntityCode } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
-import * as XLSX from 'xlsx'
+import { parseSpreadsheet } from '@/lib/spreadsheet'
 
 const ALLOWED_MIME = new Set([
   'text/csv',
-  'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/octet-stream',
 ])
@@ -19,19 +18,17 @@ export async function POST(req: NextRequest) {
 
     // C-3/M-6: validate size and MIME before reading bytes
     if (file.size > MAX_BYTES) return apiError('File too large (max 5 MB)', 413)
-    if (!ALLOWED_MIME.has(file.type) && !file.name.match(/\.(csv|xls|xlsx)$/i)) {
-      return apiError('Only CSV or Excel files are supported')
+    if (!ALLOWED_MIME.has(file.type) && !file.name.match(/\.(csv|xlsx)$/i)) {
+      return apiError('Only CSV or .xlsx files are supported (re-save legacy .xls as .xlsx)')
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())
     let rows: Record<string, string>[]
 
     try {
-      const wb = XLSX.read(buffer, { type: 'buffer' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, string>[]
+      rows = await parseSpreadsheet(buffer, file.name)
     } catch {
-      return apiError('Invalid file format. Please upload a CSV or Excel file.')
+      return apiError('Invalid file format. Please upload a CSV or .xlsx file.')
     }
 
     if (!rows.length) return apiError('File is empty')

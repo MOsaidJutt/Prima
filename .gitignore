@@ -42,3 +42,8 @@ next-env.d.ts
 
 /src/generated/prisma
 config.bat
+
+# real env files (keep .env.example)
+.env
+.env.local
+.env*.local
