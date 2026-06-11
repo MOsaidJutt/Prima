@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import type { PrismaClient } from '@prisma/client'
 
-type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
+// Interactive-transaction client of the extended (PII-encrypting) prisma client
+type Tx = Parameters<Parameters<(typeof prisma)['$transaction']>[0]>[0]
 
 /**
  * Generates the next invoice number for an organization atomically.
