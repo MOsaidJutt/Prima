@@ -1,0 +1,12 @@
+All demo passwords default to Admin@123 unless you set DEMO_ADMIN_PASSWORD in .env.local.
+
+Role	Email	Password	Redirects to
+Super Admin	admin@prima.app	SuperAdmin@123	/super-admin/dashboard
+Tenant Admin (TechCorp)	admin@techcorp.pk	Admin@123	/admin
+Manager (TechCorp)	manager@techcorp.pk	Admin@123	/manager
+Accountant (TechCorp)	accounts@techcorp.pk	Admin@123	/admin
+Sales Rep (Acme)	salesperson@acme.pk	Admin@123	/dashboard
+Tenant Admin (Acme trial)	admin@acme.pk	Admin@123	/admin
+
+
+C:\Users\Hamza Khan\Desktop\Prima\image.png
