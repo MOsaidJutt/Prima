@@ -39,13 +39,35 @@ export async function GET(_req: Request) {
       isMfaEnabled: true,
       lastLoginAt: true,
       createdAt: true,
+      aiTokenQuota: true,
+      aiQuotaUsed: true,
+      aiQuotaResetAt: true,
       role: { select: { id: true, name: true } },
       department: { select: { id: true, name: true } },
     },
   })
 
   if (!user) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true, data: user })
+
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      aiEnabled: true,
+      aiSettings: { select: { perUserQuotasEnabled: true, defaultUserQuota: true } },
+    },
+  })
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      ...user,
+      org: {
+        aiEnabled: org?.aiEnabled ?? false,
+        perUserQuotasEnabled: org?.aiSettings?.perUserQuotasEnabled ?? false,
+        defaultUserQuota: org?.aiSettings?.defaultUserQuota ?? 10000,
+      },
+    },
+  })
 }
 
 export async function PATCH(req: Request) {

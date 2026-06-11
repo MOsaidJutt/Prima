@@ -11,6 +11,7 @@ const patchSchema = z.object({
   roleId: z.string().uuid().optional(),
   departmentId: z.string().uuid().optional().nullable(),
   avatar: z.string().url().optional().nullable(),
+  aiTokenQuota: z.number().int().min(0).nullable().optional(),
 })
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -36,13 +37,35 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       departmentId: true,
       isMfaEnabled: true,
       preferences: true,
+      aiTokenQuota: true,
+      aiQuotaUsed: true,
+      aiQuotaResetAt: true,
       role: { select: { id: true, name: true, isSystem: true } },
       department: { select: { id: true, name: true } },
     },
   })
 
   if (!user) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true, data: user })
+
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      aiEnabled: true,
+      aiSettings: { select: { perUserQuotasEnabled: true, defaultUserQuota: true } },
+    },
+  })
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      ...user,
+      org: {
+        aiEnabled: org?.aiEnabled ?? false,
+        perUserQuotasEnabled: org?.aiSettings?.perUserQuotasEnabled ?? false,
+        defaultUserQuota: org?.aiSettings?.defaultUserQuota ?? 10000,
+      },
+    },
+  })
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -67,6 +90,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         roleId: data.roleId,
         departmentId: data.departmentId,
         avatar: data.avatar,
+        aiTokenQuota: data.aiTokenQuota,
       },
     })
 

@@ -30,6 +30,24 @@ export type AppSession = SuperAdminSession | TenantSession
 
 export type UserWithRole = User & { role: Role; department: Department | null }
 
+// ── Fresh (non-JWT) organization billing/lifecycle status ────────────────────
+// Phase 6: requireTenantAuth fetches these fields on every request so
+// withTenantApi can enforce the current subscription status — unlike
+// session.organization (JWT-embedded), this can never be stale.
+
+export type OrgBillingStatus = Pick<
+  Organization,
+  | 'id'
+  | 'slug'
+  | 'name'
+  | 'status'
+  | 'plan'
+  | 'pastDueAt'
+  | 'suspendedAt'
+  | 'cancelledAt'
+  | 'gracePeriodEndsAt'
+>
+
 // ── Generic API response envelopes ───────────────────────────────────────────
 
 export type ApiResponse<T = unknown> =

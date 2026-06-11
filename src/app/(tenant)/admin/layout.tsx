@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 import { getTenantSession } from '@/lib/auth/session'
 import { prisma } from '@/lib/prisma'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { UserProvider } from '@/context/user-context'
 import { hexToHsl } from '@/lib/utils'
 import { ChatFloat } from '@/components/ai/chat-float'
+import { SubscriptionStatusBanner } from '@/components/billing/subscription-status-banner'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getTenantSession()
@@ -37,10 +39,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       accentColor: true,
       fontFamily: true,
       logoLight: true,
+      status: true,
+      trialEndsAt: true,
+      pastDueAt: true,
+      gracePeriodEndsAt: true,
     },
   })
 
   if (!org) redirect('/login')
+
+  // Phase 6: a CANCELLED org may only access /admin/billing — redirect
+  // everything else there so tenants can reactivate their subscription.
+  if (org.status === 'CANCELLED') {
+    const pathname = (await headers()).get('x-pathname') ?? ''
+    if (!pathname.startsWith('/admin/billing')) redirect('/admin/billing')
+  }
 
   // Convert hex branding colors to HSL for CSS variable injection
   const primaryHsl = hexToHsl(org.primaryColor)
@@ -89,6 +102,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         userEmail={user.email}
         userAvatar={user.avatar}
       >
+        <SubscriptionStatusBanner org={org} />
         {children}
         <ChatFloat />
       </DashboardLayout>

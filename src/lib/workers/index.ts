@@ -17,6 +17,11 @@ import { matviewRefreshWorker } from './matview-refresh'
 import { startInventoryPredictionWorker, inventoryPredictionQueue } from './inventory-prediction'
 import { startDormantClientWorker, dormantClientQueue } from './dormant-client'
 import { startAnomalyDetectionWorker, anomalyDetectionQueue } from './anomaly-detection'
+import { startPlatformInvoiceWorker, platformInvoiceQueue } from './platform-invoicing'
+import {
+  startSubscriptionLifecycleWorker,
+  subscriptionLifecycleQueue,
+} from './subscription-lifecycle'
 
 // Start all workers
 const overdueWorker = startInvoiceOverdueWorker()
@@ -25,6 +30,8 @@ const snapshotWorker = startPerformanceSnapshotWorker()
 const inventoryPredictionWorker = startInventoryPredictionWorker()
 const dormantClientWorker = startDormantClientWorker()
 const anomalyDetectionWorker = startAnomalyDetectionWorker()
+const platformInvoiceWorker = startPlatformInvoiceWorker()
+const subscriptionLifecycleWorker = startSubscriptionLifecycleWorker()
 // matviewRefreshWorker is started on import
 
 // Register recurring cron jobs
@@ -95,6 +102,28 @@ async function registerCrons() {
     }
   )
 
+  // Platform invoicing — 1st of each month at 05:00 UTC
+  await platformInvoiceQueue.add(
+    'generate-invoices',
+    {},
+    {
+      repeat: { pattern: '0 5 1 * *' },
+      jobId: 'platform-invoicing-cron',
+      removeOnComplete: true,
+    }
+  )
+
+  // Subscription lifecycle (trial reminders, renewals, past-due/suspension escalation) — daily at 06:00 UTC
+  await subscriptionLifecycleQueue.add(
+    'run-lifecycle',
+    {},
+    {
+      repeat: { pattern: '0 6 * * *' },
+      jobId: 'subscription-lifecycle-cron',
+      removeOnComplete: true,
+    }
+  )
+
   console.log('[workers] Cron jobs registered')
 }
 
@@ -112,6 +141,8 @@ process.on('SIGTERM', async () => {
     inventoryPredictionWorker.close(),
     dormantClientWorker.close(),
     anomalyDetectionWorker.close(),
+    platformInvoiceWorker.close(),
+    subscriptionLifecycleWorker.close(),
   ])
   process.exit(0)
 })

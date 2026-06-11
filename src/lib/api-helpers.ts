@@ -13,16 +13,41 @@ export type ApiContext = {
   req: Request
 }
 
+export type TenantApiOptions = {
+  // Phase 6: billing routes (and similar "manage your way out of suspension"
+  // flows) must remain reachable even when the org is SUSPENDED/CANCELLED.
+  bypassSubscriptionCheck?: boolean
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
 // H-1: withTenantApi delegates entirely to requireTenantAuth.
 // All auth logic lives in one place; security patches propagate automatically.
 
 export async function withTenantApi(
   req: Request,
   requiredPermission: PermissionSlug | null,
-  handler: (apiCtx: ApiContext) => Promise<NextResponse>
+  handler: (apiCtx: ApiContext) => Promise<NextResponse>,
+  options: TenantApiOptions = {}
 ): Promise<NextResponse> {
   const auth = await requireTenantAuth(requiredPermission ?? undefined)
   if (!auth.ok) return auth.response
+
+  // Phase 6: subscription-lifecycle enforcement, using fresh (non-JWT) org status.
+  if (!options.bypassSubscriptionCheck) {
+    if (auth.org.status === 'CANCELLED') {
+      return apiError(
+        "This organization's subscription has been cancelled. Visit Billing to reactivate.",
+        403
+      )
+    }
+    if (auth.org.status === 'SUSPENDED' && !SAFE_METHODS.has(req.method.toUpperCase())) {
+      return apiError(
+        'This organization is suspended due to non-payment. Visit Billing to restore access.',
+        403
+      )
+    }
+  }
 
   const ctx: TenantContext = {
     organizationId: auth.session.organizationId,

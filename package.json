@@ -53,6 +53,8 @@
     "@react-email/components": "^0.0.31",
     "@react-pdf/renderer": "^4.5.1",
     "@sentry/nextjs": "^10.53.1",
+    "@stripe/react-stripe-js": "^6.6.0",
+    "@stripe/stripe-js": "^9.8.0",
     "@types/leaflet": "^1.9.21",
     "@types/papaparse": "^5.5.2",
     "@upstash/ratelimit": "^2.0.8",
@@ -85,6 +87,7 @@
     "sharp": "^0.33.5",
     "simple-statistics": "^7.8.9",
     "sonner": "^1.7.2",
+    "stripe": "^18.5.0",
     "tailwind-merge": "^2.6.0",
     "xlsx": "^0.18.5",
     "zod": "^3.24.0"

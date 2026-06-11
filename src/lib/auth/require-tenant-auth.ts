@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { hasPermission } from '@/lib/permissions'
 import { checkApiRateLimit } from '@/lib/rate-limit'
 import type { PermissionSlug } from '@/lib/permissions'
-import type { TenantSession, UserWithRole } from '@/types'
+import type { TenantSession, UserWithRole, OrgBillingStatus } from '@/types'
 
 // ── Auth result types ─────────────────────────────────────────────────────────
 
@@ -12,6 +12,9 @@ export type AuthSuccess = {
   ok: true
   session: TenantSession
   user: UserWithRole
+  // Fresh from the DB on every request — unlike session.organization (JWT,
+  // may be stale), this reflects the org's current subscription lifecycle state.
+  org: OrgBillingStatus
 }
 
 export type AuthFailure = {
@@ -55,6 +58,19 @@ export async function requireTenantAuth(slug?: PermissionSlug): Promise<AuthResu
     include: {
       role: true,
       department: true,
+      organization: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          status: true,
+          plan: true,
+          pastDueAt: true,
+          suspendedAt: true,
+          cancelledAt: true,
+          gracePeriodEndsAt: true,
+        },
+      },
     },
   })
 
@@ -76,7 +92,7 @@ export async function requireTenantAuth(slug?: PermissionSlug): Promise<AuthResu
     }
   }
 
-  return { ok: true, session, user }
+  return { ok: true, session, user, org: user.organization }
 }
 
 // ── Ownership check helper ────────────────────────────────────────────────────

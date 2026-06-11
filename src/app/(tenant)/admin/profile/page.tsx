@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
 import { Loader2, Shield } from 'lucide-react'
 
 type ProfileData = {
@@ -35,6 +36,14 @@ type ProfileData = {
   }
   role: { id: string; name: string }
   department: { id: string; name: string } | null
+  aiTokenQuota: number | null
+  aiQuotaUsed: number
+  aiQuotaResetAt: string
+  org: {
+    aiEnabled: boolean
+    perUserQuotasEnabled: boolean
+    defaultUserQuota: number
+  }
 }
 
 export default function ProfilePage() {
@@ -193,6 +202,39 @@ export default function ProfilePage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* AI Token Usage */}
+          {profile.org.aiEnabled && profile.org.perUserQuotasEnabled && (
+            <Card>
+              <CardHeader>
+                <CardTitle>AI Token Usage</CardTitle>
+                <CardDescription>
+                  Your monthly AI token consumption. Resets on{' '}
+                  {new Date(profile.aiQuotaResetAt).toLocaleDateString()}.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {(() => {
+                  const effectiveQuota = profile.aiTokenQuota ?? profile.org.defaultUserQuota
+                  const usagePct =
+                    effectiveQuota > 0
+                      ? Math.min(100, Math.round((profile.aiQuotaUsed / effectiveQuota) * 100))
+                      : 0
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Tokens used this month</span>
+                        <span className="font-medium">
+                          {profile.aiQuotaUsed.toLocaleString()} / {effectiveQuota.toLocaleString()}
+                        </span>
+                      </div>
+                      <Progress value={usagePct} className="h-2" />
+                    </div>
+                  )
+                })()}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Preferences */}
           <Card>

@@ -17,7 +17,13 @@ export async function middleware(request: NextRequest) {
   const isSubdomain = parts.length >= 2 && parts[0] !== 'www' && parts[0] !== 'localhost'
   const orgSlug = isSubdomain ? parts[0] : null
 
-  const response = NextResponse.next()
+  // Forward the pathname as a request header so server layouts can read it via
+  // headers() — used by Phase 6 subscription enforcement (e.g. redirecting
+  // CANCELLED orgs to /admin/billing).
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-pathname', pathname)
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } })
   if (orgSlug) {
     response.headers.set('x-org-slug', orgSlug)
   }

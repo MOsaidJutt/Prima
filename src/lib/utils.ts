@@ -20,6 +20,12 @@ export function formatCurrency(amount: number, currency = 'PKR'): string {
   return new Intl.NumberFormat('en-PK', { style: 'currency', currency }).format(amount)
 }
 
+// Round-trips a value through JSON so Prisma Decimal/Date instances become
+// plain strings/numbers — required before storing as a Json (audit log) field.
+export function toJsonSafe<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 // Convert hex → HSL string "H S% L%" for CSS custom property injection.
 // Tailwind v4 @theme uses hsl(var(--primary)) so the var must be "H S% L%".
 export function hexToHsl(hex: string): string {

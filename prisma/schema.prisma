@@ -39,6 +39,54 @@ enum SessionType {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 6: Platform Billing enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+enum PaymentProviderType {
+  MANUAL
+  STRIPE
+  JAZZCASH
+  EASYPAISA
+}
+
+enum TopUpOrderStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PlatformPaymentType {
+  SUBSCRIPTION
+  SETUP_FEE
+  TOPUP
+  MANUAL_ADJUSTMENT
+}
+
+enum PlatformPaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum CouponDiscountType {
+  PERCENT
+  FLAT
+}
+
+enum PromotionAppliesTo {
+  ALL
+  ANNUAL
+  NEW_SIGNUPS
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SuperAdmin
 // Platform-level only. Soft-deleted (deletedAt) to preserve PlatformAuditLog
 // FK integrity when sub-admins are removed.
@@ -154,6 +202,7 @@ model Organization {
 
   // Subscription
   plan              SubscriptionPlan @default(STARTER)
+  billingCycle      BillingCycle     @default(MONTHLY)
   trialEndsAt       DateTime?
   subscriptionStart DateTime?
   subscriptionEnd   DateTime?
@@ -161,6 +210,14 @@ model Organization {
   setupFeePaid      Boolean          @default(false)
   monthlyPrice      Decimal          @default(0) @db.Decimal(10, 2)
   customPricing     Boolean          @default(false)
+
+  // Phase 6: subscription lifecycle tracking
+  pastDueAt          DateTime? // set when status first transitions to PAST_DUE
+  suspendedAt        DateTime? // set when status first transitions to SUSPENDED
+  cancelledAt        DateTime? // set when status first transitions to CANCELLED
+  gracePeriodEndsAt  DateTime? // SUSPENDED + 30 days — data deletion eligible after this
+  lastReminderSentAt DateTime? // last grace-period reminder email
+  stripeCustomerId   String?
 
   // AI
   aiEnabled          Boolean @default(false)
@@ -197,17 +254,23 @@ model Organization {
 
   // Platform relations
   invoices    OrganizationInvoice[]
-  sessions    UserSession[]          @relation("TenantSessions")
+  sessions    UserSession[]            @relation("TenantSessions")
   invitations OrganizationInvitation[]
 
   // Phase 5 AI relations
-  aiSettings         OrganizationAISettings?
-  aiRecommendations  AIRecommendation[]
-  aiConversations    AIConversation[]
-  aiInsights         AIInsight[]
-  tokenWallet        TokenWallet?
-  tokenUsageLogs     TokenUsageLog[]
+  aiSettings           OrganizationAISettings?
+  aiRecommendations    AIRecommendation[]
+  aiConversations      AIConversation[]
+  aiInsights           AIInsight[]
+  tokenWallet          TokenWallet?
+  tokenUsageLogs       TokenUsageLog[]
   inventoryPredictions InventoryPrediction[]
+
+  // Phase 6 billing relations
+  paymentMethods    BillingPaymentMethod[]
+  topUpOrders       TokenTopUpOrder[]
+  couponRedemptions CouponRedemption[]
+  platformPayments  PlatformPayment[]
 
   // Phase 1c tenant relations
   users            User[]
@@ -295,8 +358,8 @@ model OrganizationInvitation {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   email       String
-  tokenHash   String   @unique
-  tokenPrefix String   @db.VarChar(8) // first 8 chars of raw token — pre-filter before bcrypt.compare()
+  tokenHash   String    @unique
+  tokenPrefix String    @db.VarChar(8) // first 8 chars of raw token — pre-filter before bcrypt.compare()
   expiresAt   DateTime
   acceptedAt  DateTime?
 
@@ -381,8 +444,8 @@ model Department {
   description String?
 
   // Self-referential hierarchy
-  parentId String?     @db.Uuid
-  parent   Department? @relation("DeptHierarchy", fields: [parentId], references: [id])
+  parentId String?      @db.Uuid
+  parent   Department?  @relation("DeptHierarchy", fields: [parentId], references: [id])
   children Department[] @relation("DeptHierarchy")
 
   // Optional manager (User)
@@ -428,10 +491,16 @@ model User {
   avatar       String?
   phone        String?
 
-  isActive      Boolean   @default(true)
-  isMfaEnabled  Boolean   @default(false)
-  mfaSecret     String?   // AES-256-GCM encrypted; implementation deferred to Phase 7
-  lastLoginAt   DateTime?
+  isActive     Boolean   @default(true)
+  isMfaEnabled Boolean   @default(false)
+  mfaSecret    String? // AES-256-GCM encrypted; implementation deferred to Phase 7
+  lastLoginAt  DateTime?
+
+  // Phase 6: per-user AI token quota (Business+ feature, OrganizationAISettings.perUserQuotasEnabled)
+  // null = unlimited (draws from org pool only)
+  aiTokenQuota   Int?
+  aiQuotaUsed    Int      @default(0)
+  aiQuotaResetAt DateTime @default(now())
 
   // Persisted preferences: theme, notification settings, dashboard layout
   preferences Json @default("{}")
@@ -443,11 +512,11 @@ model User {
   updatedAt          DateTime  @updatedAt
 
   // Back-relations
-  managedDepts    Department[]     @relation("DeptManager")
-  sentInvitations UserInvitation[] @relation("InvitedBy")
+  managedDepts    Department[]         @relation("DeptManager")
+  sentInvitations UserInvitation[]     @relation("InvitedBy")
   notifications   Notification[]
   activityFeed    ActivityFeed[]
-  auditLogs       AuditLog[]       @relation("AuditUser")
+  auditLogs       AuditLog[]           @relation("AuditUser")
   passwordResets  PasswordResetToken[]
 
   // Phase 2
@@ -455,11 +524,11 @@ model User {
   inventoryTransactions InventoryTransaction[] @relation("InventoryTxUser")
 
   // Phase 3
-  submittedDSRs   DSREntry[]          @relation("DSRSubmittedBy")
-  approvedDSRs    DSREntry[]          @relation("DSRApprovedBy")
-  createdInvoices Invoice[]           @relation("InvoiceCreatedBy")
-  payments        Payment[]           @relation("PaymentRecordedBy")
-  salesTargets    SalesTarget[]       @relation("UserTargets")
+  submittedDSRs   DSREntry[]            @relation("DSRSubmittedBy")
+  approvedDSRs    DSREntry[]            @relation("DSRApprovedBy")
+  createdInvoices Invoice[]             @relation("InvoiceCreatedBy")
+  payments        Payment[]             @relation("PaymentRecordedBy")
+  salesTargets    SalesTarget[]         @relation("UserTargets")
   snapshots       PerformanceSnapshot[] @relation("UserSnapshots")
 
   @@unique([organizationId, email])
@@ -479,8 +548,8 @@ model UserInvitation {
   organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  email      String
-  name       String?
+  email String
+  name  String?
 
   roleId String @db.Uuid
   role   Role   @relation(fields: [roleId], references: [id])
@@ -488,11 +557,11 @@ model UserInvitation {
   departmentId String?     @db.Uuid
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  invitedBy    String @db.Uuid
-  invitedByUser User  @relation("InvitedBy", fields: [invitedBy], references: [id])
+  invitedBy     String @db.Uuid
+  invitedByUser User   @relation("InvitedBy", fields: [invitedBy], references: [id])
 
-  tokenHash   String   @unique
-  tokenPrefix String   @db.VarChar(8) // first 8 chars of raw token — pre-filter before bcrypt.compare()
+  tokenHash   String    @unique
+  tokenPrefix String    @db.VarChar(8) // first 8 chars of raw token — pre-filter before bcrypt.compare()
   expiresAt   DateTime
   acceptedAt  DateTime?
 
@@ -538,8 +607,8 @@ model AuditLog {
   userId String? @db.Uuid
   user   User?   @relation("AuditUser", fields: [userId], references: [id])
 
-  action    String  // CREATE | UPDATE | DELETE | SUSPEND | INVITE | LOGIN | BRANDING_CHANGE
-  entity    String  // "User" | "Role" | "Department" | "Organization" etc.
+  action    String // CREATE | UPDATE | DELETE | SUSPEND | INVITE | LOGIN | BRANDING_CHANGE
+  entity    String // "User" | "Role" | "Department" | "Organization" etc.
   entityId  String?
   oldValue  Json?
   newValue  Json?
@@ -567,10 +636,10 @@ model Notification {
   userId String @db.Uuid
   user   User   @relation(fields: [userId], references: [id])
 
-  type   String  // user_invited | role_changed | department_assigned | system
-  title  String
-  body   String
-  data   Json?   // e.g. { entityId, entityType, actionUrl }
+  type  String // user_invited | role_changed | department_assigned | system
+  title String
+  body  String
+  data  Json? // e.g. { entityId, entityType, actionUrl }
 
   isRead Boolean   @default(false)
   readAt DateTime?
@@ -597,11 +666,11 @@ model ActivityFeed {
   userId String? @db.Uuid
   user   User?   @relation(fields: [userId], references: [id])
 
-  type        String
-  title       String
-  body        String?
-  entityType  String?
-  entityId    String?
+  type       String
+  title      String
+  body       String?
+  entityType String?
+  entityId   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt // Always equals createdAt (append-only); required by PowerSync sync protocol
@@ -678,7 +747,7 @@ model ProductCategory {
 
   name        String
   description String?
-  parentId    String?          @db.Uuid
+  parentId    String?           @db.Uuid
   parent      ProductCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children    ProductCategory[] @relation("CategoryHierarchy")
 
@@ -705,22 +774,22 @@ model Product {
   organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  sku           String
-  barcode       String?
-  name          String
-  description   String?
+  sku         String
+  barcode     String?
+  name        String
+  description String?
 
   categoryId String?          @db.Uuid
   category   ProductCategory? @relation(fields: [categoryId], references: [id])
 
   brand         String?
-  unitOfMeasure String        @default("pcs")
-  packSize      Int           @default(1)
+  unitOfMeasure String  @default("pcs")
+  packSize      Int     @default(1)
 
-  costPrice    Decimal @default(0) @db.Decimal(10, 2)
-  sellingPrice Decimal @default(0) @db.Decimal(10, 2)
+  costPrice    Decimal  @default(0) @db.Decimal(10, 2)
+  sellingPrice Decimal  @default(0) @db.Decimal(10, 2)
   mrp          Decimal? @db.Decimal(10, 2)
-  taxRate      Decimal @default(0) @db.Decimal(5, 2)
+  taxRate      Decimal  @default(0) @db.Decimal(5, 2)
 
   reorderLevel Int           @default(0)
   status       ProductStatus @default(ACTIVE)
@@ -738,9 +807,9 @@ model Product {
 
   inventoryStock        InventoryStock[]
   inventoryTransactions InventoryTransaction[]
-  dsrLineItems          DSRLineItem[]           @relation("ProductDSRLines")
-  invoiceLineItems      InvoiceLineItem[]        @relation("ProductInvoiceLines")
-  salesTargets          SalesTarget[]            @relation("ProductTargets")
+  dsrLineItems          DSRLineItem[]          @relation("ProductDSRLines")
+  invoiceLineItems      InvoiceLineItem[]      @relation("ProductInvoiceLines")
+  salesTargets          SalesTarget[]          @relation("ProductTargets")
   inventoryPredictions  InventoryPrediction[]
 
   @@unique([organizationId, sku])
@@ -1010,8 +1079,8 @@ model Attachment {
   distributorId String?      @db.Uuid
   distributor   Distributor? @relation("DistributorAttachments", fields: [distributorId], references: [id])
 
-  clientId String?  @db.Uuid
-  client   Client?  @relation("ClientAttachments", fields: [clientId], references: [id])
+  clientId String? @db.Uuid
+  client   Client? @relation("ClientAttachments", fields: [clientId], references: [id])
 
   name      String
   fileUrl   String
@@ -1049,9 +1118,9 @@ model InvoiceTemplate {
   primaryColor String?
   accentColor  String?
 
-  taxLabel             String  @default("GST")
-  invoiceNumberPrefix  String  @default("INV")
-  invoiceNumberPadding Int     @default(4)
+  taxLabel                 String  @default("GST")
+  invoiceNumberPrefix      String  @default("INV")
+  invoiceNumberPadding     Int     @default(4)
   invoiceNumberIncludeYear Boolean @default(true)
 
   bankDetailsEnabled Boolean @default(true)
@@ -1220,7 +1289,7 @@ model DSRLineItem {
   productId String  @db.Uuid
   product   Product @relation("ProductDSRLines", fields: [productId], references: [id])
 
-  quantity Int
+  quantity  Int
   unitPrice Decimal @db.Decimal(10, 2)
 
   discountType   String? // "PERCENT" | "FLAT"
@@ -1268,12 +1337,12 @@ model Invoice {
   issueDate DateTime  @default(now())
   dueDate   DateTime?
 
-  subtotal      Decimal @default(0) @db.Decimal(12, 2)
-  taxTotal      Decimal @default(0) @db.Decimal(12, 2)
-  discountTotal Decimal @default(0) @db.Decimal(12, 2)
+  subtotal       Decimal @default(0) @db.Decimal(12, 2)
+  taxTotal       Decimal @default(0) @db.Decimal(12, 2)
+  discountTotal  Decimal @default(0) @db.Decimal(12, 2)
   shippingAmount Decimal @default(0) @db.Decimal(12, 2)
-  grandTotal    Decimal @default(0) @db.Decimal(12, 2)
-  paidAmount    Decimal @default(0) @db.Decimal(12, 2)
+  grandTotal     Decimal @default(0) @db.Decimal(12, 2)
+  paidAmount     Decimal @default(0) @db.Decimal(12, 2)
 
   notes String?
   terms String?
@@ -1319,8 +1388,8 @@ model InvoiceLineItem {
   invoiceId String  @db.Uuid
   invoice   Invoice @relation(fields: [invoiceId], references: [id])
 
-  productId   String?  @db.Uuid
-  product     Product? @relation("ProductInvoiceLines", fields: [productId], references: [id])
+  productId String?  @db.Uuid
+  product   Product? @relation("ProductInvoiceLines", fields: [productId], references: [id])
 
   description String
   quantity    Int
@@ -1387,9 +1456,9 @@ model Payment {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model PaymentReminder {
-  id             String          @id @default(uuid()) @db.Uuid
-  organizationId String          @db.Uuid
-  organization   Organization    @relation(fields: [organizationId], references: [id])
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
   invoiceId String  @db.Uuid
   invoice   Invoice @relation(fields: [invoiceId], references: [id])
@@ -1472,14 +1541,14 @@ model PerformanceSnapshot {
 
   snapshotDate DateTime
 
-  dsrCount      Int     @default(0)
-  approvedDSRs  Int     @default(0)
-  rejectedDSRs  Int     @default(0)
-  totalRevenue  Decimal @default(0) @db.Decimal(12, 2)
-  totalInvoiced Decimal @default(0) @db.Decimal(12, 2)
+  dsrCount       Int     @default(0)
+  approvedDSRs   Int     @default(0)
+  rejectedDSRs   Int     @default(0)
+  totalRevenue   Decimal @default(0) @db.Decimal(12, 2)
+  totalInvoiced  Decimal @default(0) @db.Decimal(12, 2)
   totalCollected Decimal @default(0) @db.Decimal(12, 2)
-  newClients    Int     @default(0)
-  visitCount    Int     @default(0)
+  newClients     Int     @default(0)
+  visitCount     Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1648,8 +1717,8 @@ model AIMessage {
   // Redundant but required — prevents cross-org message injection if conversationId leaks
   organizationId String @db.Uuid
 
-  role    String // "user" | "assistant" | "tool"
-  content String
+  role      String // "user" | "assistant" | "tool"
+  content   String
   toolCalls Json?
 
   inputTokens  Int @default(0)
@@ -1674,10 +1743,10 @@ model AIInsight {
   organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  widgetKey  String // e.g. "executive-revenue-month"
-  summary    String
-  dataHash   String // MD5 of the source data — invalidate if changed
-  expiresAt  DateTime
+  widgetKey String // e.g. "executive-revenue-month"
+  summary   String
+  dataHash  String // MD5 of the source data — invalidate if changed
+  expiresAt DateTime
 
   inputTokens  Int @default(0)
   outputTokens Int @default(0)
@@ -1699,13 +1768,13 @@ model TokenWallet {
   organizationId String       @unique @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  balance      Int @default(0) // current token balance
+  balance        Int @default(0) // current token balance
   totalPurchased Int @default(0)
   totalConsumed  Int @default(0)
 
   // Rolling monthly usage (reset on 1st of each month)
-  monthlyUsed        Int      @default(0)
-  monthlyResetAt     DateTime @default(now())
+  monthlyUsed    Int      @default(0)
+  monthlyResetAt DateTime @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1728,6 +1797,8 @@ model TokenTopUpPack {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  topUpOrders TokenTopUpOrder[]
+
   @@index([isActive])
 }
 
@@ -1742,14 +1813,14 @@ model TokenUsageLog {
   organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  userId    String? @db.Uuid // null = system job
-  feature   String // "chat" | "summary" | "prediction" | "scoring" | "anomaly" | "embedding"
-  model     String // exact model string used
-  provider  String // "claude" | "openai" | "gemini" | "ollama"
+  userId   String? @db.Uuid // null = system job
+  feature  String // "chat" | "summary" | "prediction" | "scoring" | "anomaly" | "embedding"
+  model    String // exact model string used
+  provider String // "claude" | "openai" | "gemini" | "ollama"
 
-  inputTokens  Int     @default(0)
-  outputTokens Int     @default(0)
-  totalTokens  Int     @default(0)
+  inputTokens      Int     @default(0)
+  outputTokens     Int     @default(0)
+  totalTokens      Int     @default(0)
   estimatedCostUsd Decimal @default(0) @db.Decimal(10, 6)
 
   // Reference to what this call was for
@@ -1779,27 +1850,27 @@ model InventoryPrediction {
   product   Product @relation(fields: [productId], references: [id])
 
   // Forecasted demand
-  demand30Days  Decimal @db.Decimal(12, 2)
-  demand60Days  Decimal @db.Decimal(12, 2)
-  demand90Days  Decimal @db.Decimal(12, 2)
+  demand30Days Decimal @db.Decimal(12, 2)
+  demand60Days Decimal @db.Decimal(12, 2)
+  demand90Days Decimal @db.Decimal(12, 2)
 
   // Reorder recommendation
-  reorderQty      Int
-  reorderByDate   DateTime
+  reorderQty       Int
+  reorderByDate    DateTime
   stockoutRiskDate DateTime?
 
   // Statistical metadata
-  trend        String? // "increasing" | "decreasing" | "stable"
-  seasonality  String? // "high" | "low" | "none"
-  confidence   Decimal? @db.Decimal(3, 2) // 0.00 - 1.00
+  trend       String? // "increasing" | "decreasing" | "stable"
+  seasonality String? // "high" | "low" | "none"
+  confidence  Decimal? @db.Decimal(3, 2) // 0.00 - 1.00
 
   // LLM-generated explanation
   explanation String?
 
   // Lifecycle
-  approvedAt  DateTime?
-  approvedBy  String?   @db.Uuid
-  isApproved  Boolean   @default(false)
+  approvedAt DateTime?
+  approvedBy String?   @db.Uuid
+  isApproved Boolean   @default(false)
 
   generatedAt DateTime @default(now())
   createdAt   DateTime @default(now())
@@ -1810,4 +1881,227 @@ model InventoryPrediction {
   @@index([productId])
   @@index([generatedAt])
   @@index([stockoutRiskDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 6: Platform Billing models
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BillingPlan
+// Platform-defined subscription tiers (one row per SubscriptionPlan tier).
+// No soft-delete — use isActive to retire a tier. Historical Organization /
+// PlatformPayment records reference the SubscriptionPlan enum, not this row's
+// id, so rows are never removed.
+// ─────────────────────────────────────────────────────────────────────────────
+model BillingPlan {
+  id   String           @id @default(uuid()) @db.Uuid
+  tier SubscriptionPlan @unique
+
+  name        String
+  description String?
+
+  monthlyPrice Decimal @default(0) @db.Decimal(10, 2) // PKR
+  annualPrice  Decimal @default(0) @db.Decimal(10, 2) // PKR (discounted)
+  setupFee     Decimal @default(20000) @db.Decimal(10, 2) // PKR
+
+  maxUsers             Int? // null = unlimited
+  aiTokensIncluded     Int     @default(0)
+  aiEnabled            Boolean @default(false)
+  perUserQuotasEnabled Boolean @default(false)
+  invoiceTemplateLimit Int? // null = unlimited
+  customDomain         Boolean @default(false)
+  prioritySupport      Boolean @default(false)
+  sla                  String?
+
+  features  Json    @default("[]") // marketing bullet points
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BillingPaymentMethod
+// Tenant's saved card on file for subscription billing & auto-top-up.
+// Soft-deleted (deletedAt) so historical PlatformPayment/audit records that
+// reference a removed card remain meaningful.
+// ─────────────────────────────────────────────────────────────────────────────
+model BillingPaymentMethod {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  provider PaymentProviderType
+
+  providerCustomerId      String?
+  providerPaymentMethodId String?
+
+  brand    String? // visa, mastercard
+  last4    String?
+  expMonth Int?
+  expYear  Int?
+
+  isDefault Boolean @default(false)
+
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TokenTopUpOrder
+// A purchase of a TokenTopUpPack — manual, automatic, or via a payment
+// provider. No soft-delete — orders are an append-only purchase ledger.
+// ─────────────────────────────────────────────────────────────────────────────
+model TokenTopUpOrder {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  packId String         @db.Uuid
+  pack   TokenTopUpPack @relation(fields: [packId], references: [id])
+
+  tokens   Int // snapshot
+  priceUsd Decimal @db.Decimal(8, 2) // snapshot
+
+  status       TopUpOrderStatus    @default(PENDING)
+  isAutoTopUp  Boolean             @default(false)
+  provider     PaymentProviderType
+  providerRef  String?
+  failedReason String?
+  completedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Coupon
+// Super Admin-defined discount codes redeemed by tenants at checkout.
+// No soft-delete — use isActive to retire a code; CouponRedemption rows
+// reference it permanently for revenue/analytics history.
+// ─────────────────────────────────────────────────────────────────────────────
+model Coupon {
+  id          String  @id @default(uuid()) @db.Uuid
+  code        String  @unique
+  description String?
+
+  discountType  CouponDiscountType?
+  discountValue Decimal?            @db.Decimal(10, 2) // % (0-100) or flat PKR
+
+  setupFeeWaiver Boolean @default(false)
+  bonusTokens    Int     @default(0)
+
+  applicablePlans SubscriptionPlan[] @default([])
+
+  maxRedemptions  Int?
+  redemptionCount Int  @default(0)
+
+  validFrom  DateTime  @default(now())
+  validUntil DateTime?
+  isActive   Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redemptions CouponRedemption[]
+
+  @@index([code])
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CouponRedemption
+// Append-only record of a coupon applied by an org (one redemption per org
+// per coupon, enforced by the unique constraint below). Never deleted.
+// ─────────────────────────────────────────────────────────────────────────────
+model CouponRedemption {
+  id       String @id @default(uuid()) @db.Uuid
+  couponId String @db.Uuid
+  coupon   Coupon @relation(fields: [couponId], references: [id])
+
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  discountApplied    Decimal @default(0) @db.Decimal(10, 2)
+  bonusTokensGranted Int     @default(0)
+  setupFeeWaived     Boolean @default(false)
+
+  redeemedAt DateTime @default(now())
+
+  @@unique([couponId, organizationId])
+  @@index([organizationId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Promotion
+// Platform-wide automatic promotions (no code required), e.g. "setup waived
+// for annual plans". Evaluated at checkout/plan-change time.
+// No soft-delete — use isActive/startsAt/endsAt to control visibility.
+// ─────────────────────────────────────────────────────────────────────────────
+model Promotion {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+
+  discountType   CouponDiscountType?
+  discountValue  Decimal?            @db.Decimal(10, 2)
+  setupFeeWaiver Boolean             @default(false)
+  bonusTokens    Int                 @default(0)
+
+  appliesTo PromotionAppliesTo @default(ALL)
+
+  startsAt DateTime?
+  endsAt   DateTime?
+  isActive Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PlatformPayment
+// Append-only ledger of all platform-level payments (subscription, setup fee,
+// top-ups, manual adjustments). Never deleted; status is updated only via
+// reconcilePlatformPayment() / payment provider webhooks.
+// ─────────────────────────────────────────────────────────────────────────────
+model PlatformPayment {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  type     PlatformPaymentType
+  amount   Decimal             @db.Decimal(10, 2)
+  currency String              @default("PKR")
+
+  provider    PaymentProviderType
+  providerRef String?
+
+  status PlatformPaymentStatus @default(PENDING)
+
+  invoiceId    String? @db.Uuid
+  topUpOrderId String? @db.Uuid
+
+  notes      String?
+  recordedBy String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([type])
+  @@index([providerRef])
 }

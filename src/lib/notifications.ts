@@ -13,6 +13,14 @@ export type NotificationType =
   | 'ai_insight' // Phase 5
   | 'ai_budget_exhausted' // Phase 5
   | 'ai_recommendation' // Phase 5
+  | 'billing_topup_success' // Phase 6
+  | 'billing_topup_failed' // Phase 6
+  | 'billing_payment_failed' // Phase 6
+  | 'billing_past_due' // Phase 6
+  | 'billing_suspended' // Phase 6
+  | 'billing_trial_ending' // Phase 6
+  | 'token_quota_warning' // Phase 6
+  | 'billing_wallet_low' // Phase 6
 
 export async function createNotification(opts: {
   organizationId: string

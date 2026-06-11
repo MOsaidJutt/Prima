@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { UserProvider } from '@/context/user-context'
 import { hexToHsl } from '@/lib/utils'
+import { SubscriptionStatusBanner } from '@/components/billing/subscription-status-banner'
+import { CancelledAccountNotice } from '@/components/billing/cancelled-account-notice'
 
 export default async function SalesRepLayout({ children }: { children: React.ReactNode }) {
   const session = await getTenantSession()
@@ -32,6 +34,10 @@ export default async function SalesRepLayout({ children }: { children: React.Rea
       accentColor: true,
       fontFamily: true,
       logoLight: true,
+      status: true,
+      trialEndsAt: true,
+      pastDueAt: true,
+      gracePeriodEndsAt: true,
     },
   })
   if (!org) redirect('/login')
@@ -65,7 +71,8 @@ export default async function SalesRepLayout({ children }: { children: React.Rea
         userEmail={user.email}
         userAvatar={user.avatar}
       >
-        {children}
+        <SubscriptionStatusBanner org={org} />
+        {org.status === 'CANCELLED' ? <CancelledAccountNotice /> : children}
       </DashboardLayout>
     </UserProvider>
   )

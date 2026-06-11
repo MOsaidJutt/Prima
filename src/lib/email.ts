@@ -234,6 +234,234 @@ export async function sendPaymentReminderEmail({
   })
 }
 
+// ── Phase 6: Platform billing ─────────────────────────────────────────────────
+
+export async function sendSubscriptionConfirmationEmail({
+  to,
+  orgName,
+  planName,
+  billingCycle,
+  amount,
+  nextBillingDate,
+}: {
+  to: string
+  orgName: string
+  planName: string
+  billingCycle: string
+  amount: number
+  nextBillingDate: Date
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Your Prima subscription is active — ${planName}`,
+    html: emailHtml({
+      heading: 'Subscription Activated',
+      preheader: `${orgName} is now on the ${planName} plan`,
+      body: `Hi,<br/><br/>
+        Thanks for subscribing to Prima! <strong>${orgName}</strong> is now on the
+        <strong>${planName}</strong> plan, billed ${billingCycle.toLowerCase()}.<br/><br/>
+        Amount charged: <strong>PKR ${amount.toLocaleString()}</strong><br/>
+        Next billing date: <strong>${nextBillingDate.toLocaleDateString('en-PK')}</strong>`,
+      ctaText: 'View Billing',
+      ctaHref: `${APP_URL}/admin/billing`,
+      footer:
+        'You can manage your subscription, payment methods, and token wallet from your billing page.',
+    }),
+  })
+}
+
+export async function sendPaymentFailedEmail({
+  to,
+  orgName,
+  amount,
+  reason,
+}: {
+  to: string
+  orgName: string
+  amount: number
+  reason?: string
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Action required: payment failed for ${orgName}`,
+    html: emailHtml({
+      heading: 'Payment Failed',
+      preheader: "We couldn't process your subscription payment",
+      body: `Hi,<br/><br/>
+        We were unable to process your subscription payment of
+        <strong>PKR ${amount.toLocaleString()}</strong> for <strong>${orgName}</strong>.${reason ? `<br/>Reason: ${reason}` : ''}<br/><br/>
+        Please update your payment method to avoid any interruption to your service.
+        If this isn't resolved within 7 days, some features (AI tools and exports) will be
+        temporarily restricted, and after 14 days your account will be suspended.`,
+      ctaText: 'Update Payment Method',
+      ctaHref: `${APP_URL}/admin/billing`,
+      footer: 'If you believe this is an error, please contact support.',
+    }),
+  })
+}
+
+export async function sendFeatureRestrictedEmail({ to, orgName }: { to: string; orgName: string }) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Features restricted for ${orgName} — payment still pending`,
+    html: emailHtml({
+      heading: 'Account Features Restricted',
+      preheader: 'AI features and exports are now disabled',
+      body: `Hi,<br/><br/>
+        Your subscription payment for <strong>${orgName}</strong> is still pending.
+        AI features and data exports have been temporarily disabled.<br/><br/>
+        Please update your payment method now to restore full access.
+        If payment is not received within 7 more days, your account will be suspended.`,
+      ctaText: 'Update Payment Method',
+      ctaHref: `${APP_URL}/admin/billing`,
+      footer: 'Your data remains safe — only AI features and exports are affected.',
+    }),
+  })
+}
+
+export async function sendSuspendedEmail({
+  to,
+  orgName,
+  gracePeriodEndsAt,
+}: {
+  to: string
+  orgName: string
+  gracePeriodEndsAt: Date
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `${orgName} has been suspended — payment overdue`,
+    html: emailHtml({
+      heading: 'Account Suspended',
+      preheader: 'Your account is now read-only',
+      body: `Hi,<br/><br/>
+        Your subscription payment for <strong>${orgName}</strong> has not been received,
+        and your account has been suspended. Your account is now read-only — only the
+        billing page is accessible.<br/><br/>
+        Please settle your outstanding balance by
+        <strong>${gracePeriodEndsAt.toLocaleDateString('en-PK')}</strong> to reactivate your
+        account. After this date, your data will be exported and scheduled for deletion.`,
+      ctaText: 'Reactivate Account',
+      ctaHref: `${APP_URL}/admin/billing`,
+      footer: 'We hope to have you back soon — reach out if you need help.',
+    }),
+  })
+}
+
+export async function sendGracePeriodReminderEmail({
+  to,
+  orgName,
+  daysRemaining,
+  deleteAt,
+}: {
+  to: string
+  orgName: string
+  daysRemaining: number
+  deleteAt: Date
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Reminder: ${orgName} data will be deleted in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`,
+    html: emailHtml({
+      heading: 'Account Suspended — Action Needed',
+      preheader: `${daysRemaining} days remaining before data deletion`,
+      body: `Hi,<br/><br/>
+        Your account <strong>${orgName}</strong> remains suspended due to an outstanding
+        balance. You have <strong>${daysRemaining} day${daysRemaining === 1 ? '' : 's'}</strong>
+        remaining before your data is permanently deleted on
+        <strong>${deleteAt.toLocaleDateString('en-PK')}</strong>.<br/><br/>
+        Settle your balance now to reactivate your account and prevent data loss.`,
+      ctaText: 'Reactivate Account',
+      ctaHref: `${APP_URL}/admin/billing`,
+      footer: 'This is an automated reminder sent during your grace period.',
+    }),
+  })
+}
+
+export async function sendTrialEndingEmail({
+  to,
+  orgName,
+  daysRemaining,
+}: {
+  to: string
+  orgName: string
+  daysRemaining: number
+}) {
+  const isLastDay = daysRemaining <= 0
+  const subject = isLastDay
+    ? `Your Prima trial ends today — ${orgName}`
+    : `Your Prima trial ends in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`
+
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject,
+    html: emailHtml({
+      heading: isLastDay ? 'Your Trial Ends Today' : 'Your Trial Is Ending Soon',
+      preheader: subject,
+      body: `Hi,<br/><br/>
+        ${
+          isLastDay
+            ? `Your 14-day free trial of Prima for <strong>${orgName}</strong> ends today.`
+            : `Your 14-day free trial of Prima for <strong>${orgName}</strong> ends in
+               <strong>${daysRemaining} day${daysRemaining === 1 ? '' : 's'}</strong>.`
+        }
+        <br/><br/>Choose a plan now to keep using Prima without interruption — your data and
+        settings will be preserved.`,
+      ctaText: 'Choose a Plan',
+      ctaHref: `${APP_URL}/admin/billing`,
+      footer: 'Need more time or have questions? Just reply to this email.',
+    }),
+  })
+}
+
+export async function sendPlatformInvoiceEmail({
+  to,
+  orgName,
+  invoiceNumber,
+  total,
+  periodStart,
+  periodEnd,
+  pdfBuffer,
+}: {
+  to: string
+  orgName: string
+  invoiceNumber: string
+  total: number
+  periodStart: Date
+  periodEnd: Date
+  pdfBuffer: Buffer
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Your Prima invoice ${invoiceNumber}`,
+    html: emailHtml({
+      heading: `Invoice ${invoiceNumber}`,
+      preheader: `Your Prima invoice for ${periodStart.toLocaleDateString('en-PK')} – ${periodEnd.toLocaleDateString('en-PK')}`,
+      body: `Hi,<br/><br/>
+        Your Prima invoice for <strong>${orgName}</strong>, covering
+        ${periodStart.toLocaleDateString('en-PK')} – ${periodEnd.toLocaleDateString('en-PK')},
+        is attached as a PDF.<br/><br/>
+        <strong>Total due: PKR ${total.toLocaleString()}</strong>`,
+      ctaText: 'View Billing',
+      ctaHref: `${APP_URL}/admin/billing`,
+      footer: 'Thank you for using Prima.',
+    }),
+    attachments: [
+      {
+        filename: `${invoiceNumber}.pdf`,
+        content: pdfBuffer,
+      },
+    ],
+  })
+}
+
 // ── Shared HTML template ──────────────────────────────────────────────────────
 
 function emailHtml({

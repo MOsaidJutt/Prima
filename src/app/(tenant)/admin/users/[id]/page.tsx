@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { PermissionGate } from '@/components/permission-gate'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Progress } from '@/components/ui/progress'
 import { ArrowLeft, Loader2, Mail, Key, Ban } from 'lucide-react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
@@ -44,6 +45,14 @@ type UserDetail = {
   createdAt: string
   role: { id: string; name: string; isSystem: boolean }
   department: { id: string; name: string } | null
+  aiTokenQuota: number | null
+  aiQuotaUsed: number
+  aiQuotaResetAt: string
+  org: {
+    aiEnabled: boolean
+    perUserQuotasEnabled: boolean
+    defaultUserQuota: number
+  }
 }
 
 export default function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -54,7 +63,13 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
   const [saving, setSaving] = useState(false)
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([])
-  const [form, setForm] = useState({ name: '', phone: '', roleId: '', departmentId: '' })
+  const [form, setForm] = useState({
+    name: '',
+    phone: '',
+    roleId: '',
+    departmentId: '',
+    aiTokenQuota: '',
+  })
 
   useEffect(() => {
     Promise.all([
@@ -69,6 +84,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           phone: ud.data.phone ?? '',
           roleId: ud.data.role.id,
           departmentId: ud.data.department?.id ?? '',
+          aiTokenQuota: ud.data.aiTokenQuota?.toString() ?? '',
         })
       }
       if (rd.success) setRoles(rd.data)
@@ -88,11 +104,16 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           phone: form.phone || null,
           roleId: form.roleId,
           departmentId: form.departmentId || null,
+          aiTokenQuota: form.aiTokenQuota.trim() === '' ? null : Number(form.aiTokenQuota),
         }),
       })
       const data = await res.json()
-      if (data.success) toast.success('User updated')
-      else toast.error(data.error)
+      if (data.success) {
+        toast.success('User updated')
+        setUser((u) => (u ? { ...u, aiTokenQuota: data.data.aiTokenQuota } : u))
+      } else {
+        toast.error(data.error)
+      }
     } finally {
       setSaving(false)
     }
@@ -206,6 +227,9 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           <Tabs defaultValue="edit">
             <TabsList>
               <TabsTrigger value="edit">Details</TabsTrigger>
+              {user.org.aiEnabled && user.org.perUserQuotasEnabled && (
+                <TabsTrigger value="ai-usage">AI Usage</TabsTrigger>
+              )}
               <TabsTrigger value="actions">Actions</TabsTrigger>
             </TabsList>
 
@@ -282,6 +306,74 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {user.org.aiEnabled && user.org.perUserQuotasEnabled && (
+              <TabsContent value="ai-usage" className="mt-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>AI Token Usage</CardTitle>
+                    <CardDescription>
+                      Monthly AI token consumption for this user. Resets on{' '}
+                      {new Date(user.aiQuotaResetAt).toLocaleDateString()}.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {(() => {
+                      const effectiveQuota = user.aiTokenQuota ?? user.org.defaultUserQuota
+                      const usagePct =
+                        effectiveQuota > 0
+                          ? Math.min(100, Math.round((user.aiQuotaUsed / effectiveQuota) * 100))
+                          : 0
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Tokens used this month</span>
+                            <span className="font-medium">
+                              {user.aiQuotaUsed.toLocaleString()} /{' '}
+                              {effectiveQuota.toLocaleString()}
+                            </span>
+                          </div>
+                          <Progress value={usagePct} className="h-2" />
+                        </div>
+                      )
+                    })()}
+
+                    <PermissionGate
+                      slug="users:update"
+                      fallback={
+                        <div className="space-y-2">
+                          <Label>Monthly Quota</Label>
+                          <p className="text-sm">
+                            {user.aiTokenQuota
+                              ? `${user.aiTokenQuota.toLocaleString()} tokens (custom)`
+                              : `${user.org.defaultUserQuota.toLocaleString()} tokens (organization default)`}
+                          </p>
+                        </div>
+                      }
+                    >
+                      <div className="space-y-2">
+                        <Label>Custom Monthly Quota (tokens)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={form.aiTokenQuota}
+                          onChange={(e) => setForm({ ...form, aiTokenQuota: e.target.value })}
+                          placeholder={`Default: ${user.org.defaultUserQuota.toLocaleString()}`}
+                        />
+                        <p className="text-muted-foreground text-xs">
+                          Leave blank to use the organization default of{' '}
+                          {user.org.defaultUserQuota.toLocaleString()} tokens/month.
+                        </p>
+                      </div>
+                      <Button onClick={handleSave} disabled={saving}>
+                        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Quota
+                      </Button>
+                    </PermissionGate>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
 
             <TabsContent value="actions" className="mt-4">
               <Card>

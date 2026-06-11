@@ -17,6 +17,8 @@ import {
   TargetScope,
   TargetType,
   TargetPeriod,
+  CouponDiscountType,
+  PromotionAppliesTo,
 } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { DEFAULT_ROLES } from '../src/lib/permissions'
@@ -75,6 +77,204 @@ async function seedOwnerUser(opts: {
   })
 }
 
+// ── Phase 6: Billing Plans ────────────────────────────────────────────────────
+// Pricing per Prima_Pricing_Strategy.md §3 & §7. Annual price = 10x monthly
+// (12 months for the price of 10, ~17% off).
+
+async function seedBillingPlans() {
+  const plans = [
+    {
+      tier: SubscriptionPlan.STARTER,
+      name: 'Starter',
+      description: 'For solo distributors and small shops',
+      monthlyPrice: 2500,
+      annualPrice: 25000,
+      setupFee: 20000,
+      maxUsers: 5,
+      aiTokensIncluded: 0,
+      aiEnabled: false,
+      perUserQuotasEnabled: false,
+      invoiceTemplateLimit: 1,
+      customDomain: false,
+      prioritySupport: false,
+      sla: null as string | null,
+      features: [
+        'Up to 5 users',
+        'Unlimited distributors & clients',
+        '1 invoice template',
+        'Custom branding',
+        'Multiple dashboards',
+      ],
+      sortOrder: 0,
+    },
+    {
+      tier: SubscriptionPlan.PRO,
+      name: 'Pro',
+      description: 'For growing businesses with basic AI needs',
+      monthlyPrice: 6000,
+      annualPrice: 60000,
+      setupFee: 20000,
+      maxUsers: 15,
+      aiTokensIncluded: 200000,
+      aiEnabled: true,
+      perUserQuotasEnabled: false,
+      invoiceTemplateLimit: 3,
+      customDomain: false,
+      prioritySupport: false,
+      sla: null as string | null,
+      features: [
+        'Up to 15 users',
+        'AI Assistant & Inventory AI',
+        '200,000 AI tokens/month',
+        '3 invoice templates',
+        'Custom branding',
+        'Multiple dashboards',
+      ],
+      sortOrder: 1,
+    },
+    {
+      tier: SubscriptionPlan.BUSINESS,
+      name: 'Business',
+      description: 'For mid-size distribution networks',
+      monthlyPrice: 12000,
+      annualPrice: 120000,
+      setupFee: 20000,
+      maxUsers: 50,
+      aiTokensIncluded: 1000000,
+      aiEnabled: true,
+      perUserQuotasEnabled: true,
+      invoiceTemplateLimit: null,
+      customDomain: true,
+      prioritySupport: true,
+      sla: null as string | null,
+      features: [
+        'Up to 50 users',
+        'AI Assistant & Inventory AI',
+        '1,000,000 AI tokens/month',
+        'Per-user AI quotas',
+        'Unlimited invoice templates',
+        'Custom domain',
+        'Priority support',
+      ],
+      sortOrder: 2,
+    },
+    {
+      tier: SubscriptionPlan.ENTERPRISE,
+      name: 'Enterprise',
+      description: 'For large operations with multi-region needs',
+      monthlyPrice: 0,
+      annualPrice: 0,
+      setupFee: 0,
+      maxUsers: null,
+      aiTokensIncluded: 5000000,
+      aiEnabled: true,
+      perUserQuotasEnabled: true,
+      invoiceTemplateLimit: null,
+      customDomain: true,
+      prioritySupport: true,
+      sla: '99.9%',
+      features: [
+        'Unlimited users',
+        'Custom AI token allocation',
+        'Per-user AI quotas',
+        'Unlimited invoice templates',
+        'Custom domain',
+        'Priority support',
+        '99.9% uptime SLA',
+        'Dedicated onboarding',
+      ],
+      sortOrder: 3,
+    },
+  ]
+
+  for (const { tier, ...data } of plans) {
+    await prisma.billingPlan.upsert({
+      where: { tier },
+      update: {},
+      create: { tier, ...data },
+    })
+  }
+  console.log(`✅ Billing plans (${plans.length} tiers)`)
+}
+
+// ── Phase 6: Token Top-Up Packs ───────────────────────────────────────────────
+// Pricing per Prima_Pricing_Strategy.md §3 (token pack table). Values are PKR
+// (TokenTopUpPack.priceUsd is a legacy field name — see src/lib/billing/topup.ts).
+
+async function seedTokenTopUpPacks() {
+  const packs = [
+    {
+      name: 'Mini',
+      tokens: 50000,
+      priceUsd: 400,
+      sortOrder: 0,
+      description: 'Top up 50,000 AI tokens',
+    },
+    {
+      name: 'Standard',
+      tokens: 200000,
+      priceUsd: 1200,
+      sortOrder: 1,
+      description: 'Top up 200,000 AI tokens — used by default for auto-top-up',
+    },
+    {
+      name: 'Plus',
+      tokens: 1000000,
+      priceUsd: 4500,
+      sortOrder: 2,
+      description: 'Top up 1,000,000 AI tokens',
+    },
+    {
+      name: 'Bulk',
+      tokens: 5000000,
+      priceUsd: 18000,
+      sortOrder: 3,
+      description: 'Top up 5,000,000 AI tokens',
+    },
+  ]
+
+  for (const pack of packs) {
+    const existing = await prisma.tokenTopUpPack.findFirst({ where: { name: pack.name } })
+    if (!existing) await prisma.tokenTopUpPack.create({ data: pack })
+  }
+  console.log(`✅ Token top-up packs (${packs.length} packs)`)
+}
+
+// ── Phase 6: Sample Coupon & Promotion ────────────────────────────────────────
+
+async function seedCouponsAndPromotions() {
+  await prisma.coupon.upsert({
+    where: { code: 'WELCOME20' },
+    update: {},
+    create: {
+      code: 'WELCOME20',
+      description: '20% off your first subscription charge',
+      discountType: CouponDiscountType.PERCENT,
+      discountValue: 20,
+      setupFeeWaiver: false,
+      bonusTokens: 0,
+      applicablePlans: [],
+      isActive: true,
+    },
+  })
+
+  const existingPromo = await prisma.promotion.findFirst({
+    where: { name: 'Annual Setup Fee Waiver' },
+  })
+  if (!existingPromo) {
+    await prisma.promotion.create({
+      data: {
+        name: 'Annual Setup Fee Waiver',
+        description: 'Setup fee waived for tenants who choose annual billing',
+        setupFeeWaiver: true,
+        appliesTo: PromotionAppliesTo.ANNUAL,
+        isActive: true,
+      },
+    })
+  }
+  console.log('✅ Sample coupon (WELCOME20) and promotion (Annual Setup Fee Waiver)')
+}
+
 async function main() {
   console.log('🌱 Seeding database...')
 
@@ -127,6 +327,11 @@ async function main() {
     })
   }
   console.log(`✅ Platform settings (${defaultSettings.length} keys)`)
+
+  // ── Phase 6: Platform Billing — Plans, Top-Up Packs, Coupons & Promotions ──
+  await seedBillingPlans()
+  await seedTokenTopUpPacks()
+  await seedCouponsAndPromotions()
 
   // ── Demo Org 1: ACME (Trial) ───────────────────────────────────────────────
   const trialOrg = await prisma.organization.upsert({

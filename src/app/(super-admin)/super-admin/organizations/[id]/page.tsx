@@ -53,6 +53,9 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
           </div>
           <p className="text-muted-foreground font-mono text-sm">{org.slug}</p>
         </div>
+        <Button variant="outline" asChild>
+          <Link href={`/super-admin/organizations/${org.id}/billing`}>Billing</Link>
+        </Button>
         <OrgStatusActions orgId={org.id} currentStatus={org.status} />
       </div>
 

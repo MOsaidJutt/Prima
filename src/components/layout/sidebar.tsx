@@ -44,6 +44,8 @@ type NavItem = { label: string; href: string; icon: React.ElementType; slug?: st
 const superAdminNav: NavItem[] = [
   { label: 'Dashboard', href: '/super-admin/dashboard', icon: LayoutDashboard },
   { label: 'Organizations', href: '/super-admin/organizations', icon: Building2 },
+  { label: 'Billing Plans', href: '/super-admin/plans', icon: Receipt },
+  { label: 'Revenue', href: '/super-admin/revenue', icon: DollarSign },
   { label: 'Admins', href: '/super-admin/admins', icon: ShieldCheck },
   { label: 'Settings', href: '/super-admin/settings', icon: Settings },
 ]
@@ -117,6 +119,7 @@ const tenantAdminNav: NavItem[] = [
     slug: 'audit_log:read',
   },
   { label: 'AI Settings', href: '/admin/settings/ai', icon: Sparkles, slug: 'settings:view' },
+  { label: 'Billing', href: '/admin/billing', icon: Receipt, slug: 'billing:read' },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ]
 

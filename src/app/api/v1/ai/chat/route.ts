@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   const orgId = auth.session.organizationId
   const userId = auth.user.id
 
-  const budget = await checkBudget(orgId)
+  const budget = await checkBudget(orgId, userId)
   if (!budget.allowed) {
     return NextResponse.json(
       { error: 'AI token budget exhausted. Please top up or wait for next month.' },
