@@ -70,7 +70,7 @@ export default function NewRolePage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+        <Button variant="ghost" size="icon" aria-label="Back to roles" asChild>
           <Link href="/admin/settings/roles">
             <ArrowLeft className="h-4 w-4" />
           </Link>

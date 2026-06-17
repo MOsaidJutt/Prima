@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -26,7 +26,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { PermissionGate } from '@/components/permission-gate'
-import { Plus, Shield, Trash2, Pencil, Lock } from 'lucide-react'
+import { Plus, Shield, Trash2, Pencil, Lock, Loader2 } from 'lucide-react'
 
 type RoleRow = {
   id: string
@@ -39,17 +39,21 @@ type RoleRow = {
 
 export default function RolesPage() {
   const [roles, setRoles] = useState<RoleRow[]>([])
+  const [loading, setLoading] = useState(true)
 
-  async function fetchRoles() {
-    const res = await fetch('/api/roles')
-    const data = await res.json()
-    if (data.success) setRoles(data.data)
-  }
+  const fetchRoles = useCallback(async () => {
+    try {
+      const res = await fetch('/api/roles')
+      const data = await res.json()
+      if (data.success) setRoles(data.data)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     void fetchRoles()
-  }, [])
+  }, [fetchRoles])
 
   async function handleDelete(id: string, name: string) {
     const res = await fetch(`/api/roles/${id}`, { method: 'DELETE' })
@@ -83,109 +87,116 @@ export default function RolesPage() {
 
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Role</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Permissions</TableHead>
-                <TableHead>Users</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {roles.map((role) => (
-                <TableRow key={role.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Shield className="text-muted-foreground h-4 w-4" />
-                      <div>
-                        <p className="font-medium">{role.name}</p>
-                        {role.description && (
-                          <p className="text-muted-foreground text-xs">{role.description}</p>
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Permissions</TableHead>
+                  <TableHead>Users</TableHead>
+                  <TableHead className="w-24" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {roles.map((role) => (
+                  <TableRow key={role.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Shield className="text-muted-foreground h-4 w-4" />
+                        <div>
+                          <p className="font-medium">{role.name}</p>
+                          {role.description && (
+                            <p className="text-muted-foreground text-xs">{role.description}</p>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {role.isSystem ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <Lock className="h-3 w-3" /> System
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">Custom</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-muted-foreground text-sm">
+                        {role.permissions.includes('*')
+                          ? 'All permissions'
+                          : `${role.permissions.length} permissions`}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm">{role._count.users}</span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {!role.isSystem && (
+                          <>
+                            <PermissionGate slug="roles:update">
+                              <Button variant="ghost" size="icon" aria-label="Edit role" asChild>
+                                <Link href={`/admin/settings/roles/${role.id}`}>
+                                  <Pencil className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </PermissionGate>
+                            <PermissionGate slug="roles:delete">
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label="Delete role"
+                                    disabled={role._count.users > 0}
+                                    title={
+                                      role._count.users > 0 ? 'Reassign users first' : 'Delete role'
+                                    }
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                      Delete role &quot;{role.name}&quot;?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This cannot be undone. All permission settings will be lost.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleDelete(role.id, role.name)}
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </PermissionGate>
+                          </>
+                        )}
+                        {role.isSystem && (
+                          <Button variant="ghost" size="icon" aria-label="Edit role" asChild>
+                            <Link href={`/admin/settings/roles/${role.id}`}>
+                              <Pencil className="h-4 w-4" />
+                            </Link>
+                          </Button>
                         )}
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {role.isSystem ? (
-                      <Badge variant="secondary" className="gap-1">
-                        <Lock className="h-3 w-3" /> System
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline">Custom</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-muted-foreground text-sm">
-                      {role.permissions.includes('*')
-                        ? 'All permissions'
-                        : `${role.permissions.length} permissions`}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{role._count.users}</span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      {!role.isSystem && (
-                        <>
-                          <PermissionGate slug="roles:update">
-                            <Button variant="ghost" size="icon" asChild>
-                              <Link href={`/admin/settings/roles/${role.id}`}>
-                                <Pencil className="h-4 w-4" />
-                              </Link>
-                            </Button>
-                          </PermissionGate>
-                          <PermissionGate slug="roles:delete">
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  disabled={role._count.users > 0}
-                                  title={
-                                    role._count.users > 0 ? 'Reassign users first' : 'Delete role'
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>
-                                    Delete role &quot;{role.name}&quot;?
-                                  </AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This cannot be undone. All permission settings will be lost.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(role.id, role.name)}
-                                  >
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </PermissionGate>
-                        </>
-                      )}
-                      {role.isSystem && (
-                        <Button variant="ghost" size="icon" asChild>
-                          <Link href={`/admin/settings/roles/${role.id}`}>
-                            <Pencil className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

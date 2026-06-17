@@ -85,7 +85,18 @@ export async function withTenantApi(
     }
     // M-7: report unexpected errors to Sentry; import is dynamic so the module
     // loads even when SENTRY_DSN is not configured (no-op in that case).
-    import('@sentry/nextjs').then(({ captureException }) => captureException(err)).catch(() => {})
+    // Phase 7: tagged with org/user so platform errors are filterable by tenant.
+    import('@sentry/nextjs')
+      .then(({ captureException }) =>
+        captureException(err, {
+          tags: {
+            organizationId: ctx.organizationId,
+            organizationSlug: auth.session.organization.slug,
+          },
+          user: ctx.userId ? { id: ctx.userId } : undefined,
+        })
+      )
+      .catch(() => {})
     console.error('[API Error]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

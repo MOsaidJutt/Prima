@@ -125,7 +125,7 @@ export default async function OrgBillingPage({ params }: { params: Promise<{ id:
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
+        <Button variant="ghost" size="icon" aria-label="Back to organization" asChild>
           <Link href={`/super-admin/organizations/${id}`}>
             <ArrowLeft className="h-4 w-4" />
           </Link>

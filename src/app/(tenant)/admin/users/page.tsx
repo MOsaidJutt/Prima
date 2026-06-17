@@ -56,8 +56,9 @@ export default function UsersPage() {
   const [page, setPage] = useState(1)
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
 
+  // No synchronous setState here — `loading` starts true and event handlers
+  // that refetch set it explicitly (react-hooks/set-state-in-effect).
   const fetchUsers = useCallback(async () => {
-    setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page) })
       if (q) params.set('q', q)
@@ -75,7 +76,6 @@ export default function UsersPage() {
     }
   }, [q, roleFilter, statusFilter, page])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     void fetchUsers()
   }, [fetchUsers])
@@ -201,7 +201,15 @@ export default function UsersPage() {
                 <SelectItem value="suspended">Suspended</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="ghost" size="icon" onClick={fetchUsers}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Refresh users"
+              onClick={() => {
+                setLoading(true)
+                void fetchUsers()
+              }}
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
@@ -298,7 +306,7 @@ export default function UsersPage() {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" aria-label="User actions">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>

@@ -62,7 +62,12 @@ export function TopBar({ variant, userName, userEmail, userAvatar }: TopBarProps
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Account menu"
+              className="h-9 w-9 rounded-full"
+            >
               <Avatar className="h-8 w-8">
                 {userAvatar && <AvatarImage src={userAvatar} alt={userName ?? 'User'} />}
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs">

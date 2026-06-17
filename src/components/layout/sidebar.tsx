@@ -208,6 +208,7 @@ export function Sidebar({ variant, orgName }: SidebarProps) {
         <Button
           variant="ghost"
           size="icon"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           onClick={() => setCollapsed(!collapsed)}
           className="ml-auto"
         >

@@ -22,13 +22,19 @@ export function ChatFloat() {
             </div>
             <div className="flex items-center gap-1">
               <Link href="/admin/ai-assistant">
-                <Button variant="ghost" size="icon" className="h-6 w-6">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Open full assistant"
+                  className="h-6 w-6"
+                >
                   <Maximize2 className="h-3 w-3" />
                 </Button>
               </Link>
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label="Close chat"
                 className="h-6 w-6"
                 onClick={() => setOpen(false)}
               >

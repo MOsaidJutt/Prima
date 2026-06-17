@@ -56,6 +56,7 @@ export default function ClientsPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [importOpen, setImportOpen] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -63,53 +64,48 @@ export default function ClientsPage() {
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const PAGE_SIZE = 25
 
-  const fetchData = useCallback(
-    async (p = page) => {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams({
-          page: String(p),
-          pageSize: String(PAGE_SIZE),
-          ...(search && { search }),
-          ...(status !== 'all' && { status }),
-        })
-        const res = await window.fetch(`/api/v1/clients?${params}`)
-        if (!res.ok) throw new Error()
-        const data = await res.json()
-        setClients(data.clients)
-        setTotal(data.total)
-      } catch {
-        toast.error('Failed to load clients')
-      } finally {
-        setLoading(false)
-      }
-    },
-    [page, search, status]
-  )
+  // Single fetcher, closure-based (no explicit page param) so there is
+  // exactly one effect driving data loads — page/status changes and the
+  // debounced search both flow through fetchData's own identity change
+  // (react-hooks/set-state-in-effect requires a single tracked effect).
+  const fetchData = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+        ...(debouncedSearch && { search: debouncedSearch }),
+        ...(status !== 'all' && { status }),
+      })
+      const res = await window.fetch(`/api/v1/clients?${params}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setClients(data.clients)
+      setTotal(data.total)
+    } catch {
+      toast.error('Failed to load clients')
+    } finally {
+      setLoading(false)
+    }
+  }, [page, debouncedSearch, status])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    fetchData(1)
-    setPage(1)
-  }, [status])
-  useEffect(() => {
-    clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => {
-      fetchData(1)
+      setDebouncedSearch(search)
       setPage(1)
     }, 400)
     return () => clearTimeout(searchTimer.current)
   }, [search])
-  // eslint-disable-next-line react-hooks/set-state-in-effect
+
   useEffect(() => {
-    fetchData(page)
-  }, [page])
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchData()
+  }, [fetchData])
 
   async function handleDelete(ids: string[]) {
     if (!confirm(`Delete ${ids.length} client(s)?`)) return
     await Promise.all(ids.map((id) => window.fetch(`/api/v1/clients/${id}`, { method: 'DELETE' })))
     toast.success('Deleted')
-    fetchData(page)
+    void fetchData()
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -123,8 +119,8 @@ export default function ClientsPage() {
       const data = await res.json()
       toast.success(`Imported ${data.created} clients`)
       if (data.errors?.length) toast.error(data.errors[0])
-      fetchData(1)
       setPage(1)
+      void fetchData()
     } catch {
       toast.error('Import failed')
     } finally {
@@ -168,7 +164,13 @@ export default function ClientsPage() {
                 className="pl-9"
               />
             </div>
-            <Select value={status} onValueChange={setStatus}>
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                setStatus(v)
+                setPage(1)
+              }}
+            >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -245,7 +247,12 @@ export default function ClientsPage() {
             render: (r) => (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Client actions"
+                    className="h-8 w-8"
+                  >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>

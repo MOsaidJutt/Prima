@@ -204,7 +204,12 @@ export default function DepartmentsPage() {
                         <TableCell>
                           <div className="flex gap-1">
                             <PermissionGate slug="departments:update">
-                              <Button variant="ghost" size="icon" onClick={() => openEdit(dept)}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Edit department"
+                                onClick={() => openEdit(dept)}
+                              >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                             </PermissionGate>
@@ -214,6 +219,7 @@ export default function DepartmentsPage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    aria-label="Delete department"
                                     disabled={dept._count.users > 0}
                                   >
                                     <Trash2 className="h-4 w-4" />

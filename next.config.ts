@@ -37,9 +37,18 @@ const securityHeaders = [
   },
 ]
 
+const r2Host = process.env.R2_PUBLIC_URL ? new URL(process.env.R2_PUBLIC_URL).hostname : null
+
 const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
+  },
+  images: {
+    // Org uploads (product images, logos) are served from Cloudflare R2
+    remotePatterns: [
+      { protocol: 'https' as const, hostname: r2Host ?? '*.r2.dev' },
+      { protocol: 'https' as const, hostname: '*.r2.cloudflarestorage.com' },
+    ],
   },
   async headers() {
     return [

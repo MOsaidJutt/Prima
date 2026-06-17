@@ -266,7 +266,13 @@ export function InvoiceForm({ clients, products, templates, prefillDSR }: Invoic
               <div key={field.id} className="space-y-3 rounded-lg border p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Item {idx + 1}</span>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => remove(idx)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Remove item"
+                    onClick={() => remove(idx)}
+                  >
                     <Trash2 className="text-destructive h-4 w-4" />
                   </Button>
                 </div>

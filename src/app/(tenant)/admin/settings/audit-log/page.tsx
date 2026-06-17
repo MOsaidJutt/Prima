@@ -55,24 +55,27 @@ export default function AuditLogPage() {
   const [to, setTo] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
+  // No synchronous setState — `loading` starts true and the refresh button
+  // sets it explicitly (react-hooks/set-state-in-effect).
   const fetchLogs = useCallback(async () => {
-    setLoading(true)
-    const params = new URLSearchParams({ page: String(page) })
-    if (entity) params.set('entity', entity)
-    if (action) params.set('action', action)
-    if (from) params.set('from', from)
-    if (to) params.set('to', to)
+    try {
+      const params = new URLSearchParams({ page: String(page) })
+      if (entity) params.set('entity', entity)
+      if (action) params.set('action', action)
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
 
-    const res = await fetch(`/api/audit-log?${params}`)
-    const data = await res.json()
-    if (data.success) {
-      setLogs(data.data)
-      setTotal(data.total)
+      const res = await fetch(`/api/audit-log?${params}`)
+      const data = await res.json()
+      if (data.success) {
+        setLogs(data.data)
+        setTotal(data.total)
+      }
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [page, entity, action, from, to])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     void fetchLogs()
   }, [fetchLogs])
@@ -86,7 +89,15 @@ export default function AuditLogPage() {
           <h1 className="text-2xl font-bold">Audit Log</h1>
           <p className="text-muted-foreground text-sm">{total} total entries</p>
         </div>
-        <Button variant="ghost" size="icon" onClick={fetchLogs}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Refresh audit log"
+          onClick={() => {
+            setLoading(true)
+            void fetchLogs()
+          }}
+        >
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>

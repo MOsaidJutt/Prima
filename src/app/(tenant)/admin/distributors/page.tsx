@@ -70,9 +70,10 @@ export default function DistributorsPage() {
 
   const PAGE_SIZE = 25
 
+  // No synchronous setState — `loading` starts true; filter handlers reset
+  // the page and the effect below refetches (react-hooks/set-state-in-effect).
   const fetch = useCallback(
     async (p = page) => {
-      setLoading(true)
       try {
         const params = new URLSearchParams({
           page: String(p),
@@ -95,12 +96,6 @@ export default function DistributorsPage() {
     [page, search, status, tier]
   )
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => {
-    fetch(1)
-    setPage(1)
-  }, [status, tier])
-
   useEffect(() => {
     clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => {
@@ -110,10 +105,10 @@ export default function DistributorsPage() {
     return () => clearTimeout(searchTimer.current)
   }, [search])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetch(page)
-  }, [page])
+  }, [page, status, tier])
 
   async function handleDelete(ids: string[]) {
     if (!confirm(`Delete ${ids.length} distributor(s)?`)) return
@@ -182,7 +177,13 @@ export default function DistributorsPage() {
                 className="pl-9"
               />
             </div>
-            <Select value={status} onValueChange={setStatus}>
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                setStatus(v)
+                setPage(1)
+              }}
+            >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -193,7 +194,13 @@ export default function DistributorsPage() {
                 <SelectItem value="BLACKLISTED">Blacklisted</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={tier} onValueChange={setTier}>
+            <Select
+              value={tier}
+              onValueChange={(v) => {
+                setTier(v)
+                setPage(1)
+              }}
+            >
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="Tier" />
               </SelectTrigger>
@@ -278,7 +285,12 @@ export default function DistributorsPage() {
             render: (r) => (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Distributor actions"
+                    className="h-8 w-8"
+                  >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>

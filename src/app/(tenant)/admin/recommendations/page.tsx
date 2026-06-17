@@ -68,8 +68,9 @@ export default function RecommendationsPage() {
 
   const totalPages = Math.ceil(total / 20)
 
+  // No synchronous setState — `loading` starts true and the effect below
+  // refetches when filters change (react-hooks/set-state-in-effect).
   const load = useCallback(() => {
-    setLoading(true)
     const params = new URLSearchParams({
       status: statusFilter,
       page: String(page),
@@ -88,7 +89,6 @@ export default function RecommendationsPage() {
       .finally(() => setLoading(false))
   }, [statusFilter, typeFilter, severityFilter, page])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     load()
   }, [load])
@@ -278,6 +278,7 @@ export default function RecommendationsPage() {
           <Button
             variant="outline"
             size="icon"
+            aria-label="Previous page"
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
@@ -289,6 +290,7 @@ export default function RecommendationsPage() {
           <Button
             variant="outline"
             size="icon"
+            aria-label="Next page"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >

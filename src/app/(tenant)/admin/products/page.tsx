@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -57,9 +58,10 @@ export default function ProductsPage() {
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const PAGE_SIZE = 25
 
+  // No synchronous setState — `loading` starts true; filter handlers reset
+  // the page and the effect below refetches (react-hooks/set-state-in-effect).
   const fetchData = useCallback(
     async (p = page) => {
-      setLoading(true)
       try {
         const params = new URLSearchParams({
           page: String(p),
@@ -88,11 +90,6 @@ export default function ProductsPage() {
       .then((d) => setCategories(d.categories ?? []))
   }, [])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => {
-    fetchData(1)
-    setPage(1)
-  }, [status, categoryId])
   useEffect(() => {
     clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => {
@@ -101,10 +98,10 @@ export default function ProductsPage() {
     }, 400)
     return () => clearTimeout(searchTimer.current)
   }, [search])
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(page)
-  }, [page])
+  }, [page, status, categoryId])
 
   async function handleDelete(ids: string[]) {
     if (!confirm(`Delete ${ids.length} product(s)?`)) return
@@ -147,7 +144,13 @@ export default function ProductsPage() {
                 className="pl-9"
               />
             </div>
-            <Select value={categoryId} onValueChange={setCategoryId}>
+            <Select
+              value={categoryId}
+              onValueChange={(v) => {
+                setCategoryId(v)
+                setPage(1)
+              }}
+            >
               <SelectTrigger className="w-44">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
@@ -160,7 +163,13 @@ export default function ProductsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={status} onValueChange={setStatus}>
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                setStatus(v)
+                setPage(1)
+              }}
+            >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -189,8 +198,13 @@ export default function ProductsPage() {
             render: (r) => (
               <div className="flex items-center gap-2">
                 {r.images[0] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={r.images[0]} alt="" className="h-8 w-8 rounded object-cover" />
+                  <Image
+                    src={r.images[0]}
+                    alt=""
+                    width={32}
+                    height={32}
+                    className="h-8 w-8 rounded object-cover"
+                  />
                 ) : (
                   <div className="bg-muted flex h-8 w-8 items-center justify-center rounded">
                     <Package className="text-muted-foreground h-4 w-4" />
@@ -250,7 +264,12 @@ export default function ProductsPage() {
             render: (r) => (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Product actions"
+                    className="h-8 w-8"
+                  >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>

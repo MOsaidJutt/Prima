@@ -164,7 +164,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+          <Button variant="ghost" size="icon" aria-label="Back to users" asChild>
             <Link href="/admin/users">
               <ArrowLeft className="h-4 w-4" />
             </Link>
