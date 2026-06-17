@@ -2120,3 +2120,26 @@ model PlatformPayment {
   @@index([type])
   @@index([providerRef])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EmailSuppression
+// Global (not org-scoped) suppression list driven by Resend bounce/complaint
+// webhooks (Phase 7). Protects the sending domain's reputation — an address
+// that hard-bounces or files a spam complaint must not be mailed again.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model EmailSuppression {
+  id     String                  @id @default(uuid()) @db.Uuid
+  email  String                  @unique
+  reason EmailSuppressionReason
+  detail String?
+
+  createdAt DateTime @default(now())
+
+  @@index([reason])
+}
+
+enum EmailSuppressionReason {
+  BOUNCED
+  COMPLAINED
+}

@@ -1,8 +1,21 @@
 import { Resend } from 'resend'
+import { isEmailSuppressed } from '@/lib/email-suppression'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM = process.env.EMAIL_FROM ?? 'Prima <noreply@prima.app>'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+// Phase 7: every send goes through here so the bounce/complaint suppression
+// list (populated by /api/webhooks/resend) is enforced in one place, rather
+// than at each of the 13 call sites below.
+async function sendEmail(payload: Parameters<typeof resend.emails.send>[0]) {
+  const to = Array.isArray(payload.to) ? payload.to[0] : payload.to
+  if (to && (await isEmailSuppressed(to))) {
+    console.warn(`[email] skipped send to suppressed address: ${to}`)
+    return { data: null, error: null }
+  }
+  return resend.emails.send(payload)
+}
 
 // ── Super Admin → Tenant Admin invitation ─────────────────────────────────────
 
@@ -19,7 +32,7 @@ export async function sendOrganizationInvite({
 }) {
   const link = `${APP_URL}/onboarding/accept?token=${inviteToken}`
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `You've been invited to set up ${orgName} on Prima`,
@@ -53,7 +66,7 @@ export async function sendUserInvite({
 }) {
   const link = `${APP_URL}/invite/accept?token=${inviteToken}`
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `You've been invited to join ${orgName} on Prima`,
@@ -84,7 +97,7 @@ export async function sendPasswordReset({
 }) {
   const link = `${APP_URL}/reset-password?token=${resetToken}`
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: 'Reset your Prima password',
@@ -123,7 +136,7 @@ export async function sendInvoiceEmail({
     ? `<br/>Payment is due by <strong>${dueDate.toLocaleDateString('en-PK')}</strong>.`
     : ''
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `Invoice ${invoiceNumber} from ${orgName}`,
@@ -166,7 +179,7 @@ export async function sendPaymentReceiptEmail({
       ? `<br/>Remaining balance: <strong>PKR ${balance.toLocaleString()}</strong>`
       : '<br/><strong>Invoice is now fully paid. Thank you!</strong>'
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `Payment received for Invoice ${invoiceNumber}`,
@@ -217,7 +230,7 @@ export async function sendPaymentReminderEmail({
       ? `Your invoice <strong>${invoiceNumber}</strong> is due <strong>today</strong>.`
       : `Your invoice <strong>${invoiceNumber}</strong> is due in <strong>${Math.abs(daysOffset)} days</strong>${dueDate ? ` (${dueDate.toLocaleDateString('en-PK')})` : ''}.`
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject,
@@ -251,7 +264,7 @@ export async function sendSubscriptionConfirmationEmail({
   amount: number
   nextBillingDate: Date
 }) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `Your Prima subscription is active — ${planName}`,
@@ -282,7 +295,7 @@ export async function sendPaymentFailedEmail({
   amount: number
   reason?: string
 }) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `Action required: payment failed for ${orgName}`,
@@ -303,7 +316,7 @@ export async function sendPaymentFailedEmail({
 }
 
 export async function sendFeatureRestrictedEmail({ to, orgName }: { to: string; orgName: string }) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `Features restricted for ${orgName} — payment still pending`,
@@ -331,7 +344,7 @@ export async function sendSuspendedEmail({
   orgName: string
   gracePeriodEndsAt: Date
 }) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `${orgName} has been suspended — payment overdue`,
@@ -363,7 +376,7 @@ export async function sendGracePeriodReminderEmail({
   daysRemaining: number
   deleteAt: Date
 }) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `Reminder: ${orgName} data will be deleted in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`,
@@ -397,7 +410,7 @@ export async function sendTrialEndingEmail({
     ? `Your Prima trial ends today — ${orgName}`
     : `Your Prima trial ends in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject,
@@ -437,7 +450,7 @@ export async function sendPlatformInvoiceEmail({
   periodEnd: Date
   pdfBuffer: Buffer
 }) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `Your Prima invoice ${invoiceNumber}`,
