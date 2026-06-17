@@ -8,7 +8,9 @@ interface GlobalErrorProps {
 }
 
 // Catches crashes in the root layout (e.g. theme provider, font loader).
-// Must include its own <html><body> because the normal layout is unavailable.
+// Must include its own <html><body> because the normal layout is unavailable —
+// which also means NextIntlClientProvider (set up in layout.tsx) is out of
+// scope here, so this page intentionally stays hardcoded English.
 
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {

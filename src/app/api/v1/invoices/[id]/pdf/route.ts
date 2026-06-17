@@ -29,6 +29,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         email: true,
         ntn: true,
         logoLight: true,
+        locale: true,
+        currency: true,
+        timezone: true,
       },
     })
 

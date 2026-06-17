@@ -1,4 +1,7 @@
 import type { NextConfig } from 'next'
+import createNextIntlPlugin from 'next-intl/plugin'
+
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 // M-6: 'unsafe-eval' is required in development for Next.js HMR / React Fast Refresh.
 // In production it is removed — no legitimate runtime code uses eval().
@@ -60,4 +63,4 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default nextConfig
+export default withNextIntl(nextConfig)

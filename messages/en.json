@@ -1,0 +1,29 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "loading": "Loading…",
+    "goHome": "Go home",
+    "tryAgain": "Try again",
+    "refresh": "Refresh",
+    "next": "Next",
+    "previous": "Previous"
+  },
+  "errors": {
+    "notFoundCode": "404",
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "The page you are looking for does not exist or has been moved.",
+    "forbiddenCode": "403",
+    "forbiddenTitle": "Access denied",
+    "forbiddenBody": "You don't have permission to view this page. If you think this is a mistake, ask your organization admin to review your role.",
+    "serverErrorCode": "500",
+    "serverErrorTitle": "Something went wrong",
+    "serverErrorBody": "An unexpected error occurred on our side. Our team has been notified — please try again in a few minutes.",
+    "boundaryTitle": "Something went wrong",
+    "boundaryBody": "An unexpected error occurred. Please refresh the page."
+  }
+}

@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, renderToBuffer, Font } from '@react-pdf/renderer'
+import { formatCurrency, DEFAULT_ORG_LOCALE } from '@/lib/format'
 
 Font.register({
   family: 'Inter',
@@ -113,10 +114,6 @@ const styles = StyleSheet.create({
   },
 })
 
-function fmt(n: number) {
-  return `PKR ${n.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
-}
-
 function statusColor(status: string) {
   const map: Record<string, string> = {
     DRAFT: '#94A3B8',
@@ -172,12 +169,23 @@ interface InvoicePdfProps {
     email: string | null
     ntn: string | null
     logoLight: string | null
+    locale?: string
+    currency?: string
+    timezone?: string
   } | null
 }
 
 function InvoiceDocument({ invoice, org }: InvoicePdfProps) {
   const taxLabel = invoice.template?.taxLabel ?? 'GST'
   const primaryColor = invoice.template?.primaryColor ?? '#0F172A'
+  // Phase 7: respects the org's own locale/currency (set in Settings >
+  // Organization) instead of hardcoding PKR — see src/lib/format.ts
+  const orgLocale = {
+    locale: org?.locale ?? DEFAULT_ORG_LOCALE.locale,
+    currency: org?.currency ?? DEFAULT_ORG_LOCALE.currency,
+    timezone: org?.timezone ?? DEFAULT_ORG_LOCALE.timezone,
+  }
+  const fmt = (n: number) => formatCurrency(n, orgLocale)
   const sub = Number(invoice.subtotal)
   const tax = Number(invoice.taxTotal)
   const disc = Number(invoice.discountTotal)
