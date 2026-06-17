@@ -7,6 +7,7 @@ import { ThemeProvider } from '@/components/layout/theme-provider'
 import { Toaster } from 'sonner'
 import { DevAutoFill } from '@/components/dev-autofill'
 import { isRtlLocale } from '@/i18n/locales'
+import { PostHogProvider } from '@/components/analytics/posthog-provider'
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -38,9 +39,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             enableSystem
             disableTransitionOnChange
           >
-            {children}
-            <Toaster richColors position="top-right" />
-            <DevAutoFill />
+            <PostHogProvider>
+              {children}
+              <Toaster richColors position="top-right" />
+              <DevAutoFill />
+            </PostHogProvider>
           </ThemeProvider>
         </NextIntlClientProvider>
       </body>

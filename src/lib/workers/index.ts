@@ -22,6 +22,7 @@ import {
   startSubscriptionLifecycleWorker,
   subscriptionLifecycleQueue,
 } from './subscription-lifecycle'
+import { registerQueueMonitor } from './queue-monitor'
 
 // Start all workers
 const overdueWorker = startInvoiceOverdueWorker()
@@ -129,10 +130,15 @@ async function registerCrons() {
 
 registerCrons().catch(console.error)
 
+// Phase 7: alert on-call (email + optional Twilio WhatsApp) when any queue
+// backs up or accumulates failed jobs — see src/lib/workers/queue-monitor.ts
+const queueMonitorTimer = registerQueueMonitor()
+
 console.log('[workers] All workers started')
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
+  clearInterval(queueMonitorTimer)
   await Promise.all([
     overdueWorker.close(),
     reminderWorker.close(),

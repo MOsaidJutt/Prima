@@ -475,6 +475,25 @@ export async function sendPlatformInvoiceEmail({
   })
 }
 
+// ── Internal ops/on-call alerts (Phase 7 monitoring — see src/lib/alerts.ts) ──
+
+export async function sendOpsAlertEmail({ subject, body }: { subject: string; body: string }) {
+  const to = process.env.ONCALL_ALERT_EMAIL
+  if (!to) return { data: null, error: null }
+  // Internal notification, not a customer template — skip emailHtml's
+  // required CTA and ship plain branded HTML.
+  return sendEmail({
+    from: FROM,
+    to,
+    subject: `[Prima Alert] ${subject}`,
+    html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px">
+      <h2 style="color:#0F172A;margin:0 0 12px">${subject}</h2>
+      <p style="color:#334155;white-space:pre-wrap">${body}</p>
+      <p style="color:#94A3B8;font-size:12px;margin-top:24px">Automated alert from Prima monitoring.</p>
+    </div>`,
+  })
+}
+
 // ── Shared HTML template ──────────────────────────────────────────────────────
 
 function emailHtml({
