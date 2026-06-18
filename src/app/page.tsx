@@ -14,6 +14,7 @@ import {
   Send,
   CheckCircle2,
   BarChart3,
+  Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SiteHeader } from '@/components/marketing/site-header'
@@ -51,9 +52,10 @@ const FEATURES = [
   },
   {
     icon: LayoutDashboard,
-    title: '11 role-specific dashboards',
+    title: 'Role-specific dashboards',
     body: 'Sales, financial, inventory, and executive views, each customizable with drag-and-drop widgets.',
     large: false,
+    stat: '11',
   },
   {
     icon: Sparkles,
@@ -84,8 +86,13 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: 'Built for trust',
-    body: 'Tenant isolation, encrypted PII at rest, and rate-limited APIs on every request.',
+    body: null,
     large: false,
+    checklist: [
+      'Tenant isolation on every query',
+      'PII encrypted at rest',
+      'Rate limiting on every route',
+    ],
   },
   {
     icon: Globe2,
@@ -245,15 +252,34 @@ export default function LandingPage() {
                     className={feature.large ? 'md:col-span-2' : ''}
                   >
                     <div className="border-border bg-card flex h-full flex-col rounded-md border p-6">
-                      <span className="bg-accent/15 text-accent flex h-10 w-10 items-center justify-center rounded-md">
-                        <Icon className="h-5 w-5" />
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="bg-accent/15 text-accent flex h-10 w-10 items-center justify-center rounded-md">
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        {feature.stat && (
+                          <span className="text-foreground font-mono text-2xl font-bold">
+                            {feature.stat}
+                          </span>
+                        )}
+                      </div>
                       <h3 className="text-foreground mt-4 text-base font-semibold">
                         {feature.title}
                       </h3>
-                      <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                        {feature.body}
-                      </p>
+                      {feature.body && (
+                        <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+                          {feature.body}
+                        </p>
+                      )}
+                      {feature.checklist && (
+                        <ul className="mt-3 space-y-2">
+                          {feature.checklist.map((item) => (
+                            <li key={item} className="flex items-start gap-2 text-sm">
+                              <Check className="text-accent mt-0.5 h-4 w-4 shrink-0" />
+                              <span className="text-muted-foreground">{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {feature.preview === 'ai' && (
                         <div className="mt-5 hidden sm:block">
                           <AiChatPreview />
@@ -352,12 +378,12 @@ export default function LandingPage() {
         </section>
 
         {/* Final CTA */}
-        <section className="border-border/60 bg-primary border-t py-20 sm:py-28">
+        <section className="border-border/60 bg-primary dark:bg-secondary border-t py-20 sm:py-28">
           <div className="mx-auto max-w-3xl px-4 text-center sm:px-6 lg:px-8">
-            <h2 className="text-primary-foreground text-3xl font-bold tracking-tight sm:text-4xl">
+            <h2 className="text-primary-foreground dark:text-secondary-foreground text-3xl font-bold tracking-tight sm:text-4xl">
               See your business clearly, starting today.
             </h2>
-            <p className="text-primary-foreground/70 mx-auto mt-4 max-w-md text-base">
+            <p className="text-primary-foreground/70 dark:text-secondary-foreground/70 mx-auto mt-4 max-w-md text-base">
               14-day free trial. No credit card required.
             </p>
             <Button

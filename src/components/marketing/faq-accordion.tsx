@@ -18,7 +18,7 @@ export function FaqAccordion({ items }: { items: { question: string; answer: str
             open={open}
             onOpenChange={(next) => setOpenIndex(next ? i : null)}
           >
-            <Collapsible.Trigger className="flex w-full items-center justify-between gap-4 py-5 text-left">
+            <Collapsible.Trigger className="focus-visible:ring-ring flex w-full items-center justify-between gap-4 rounded-sm py-5 text-left focus-visible:ring-2 focus-visible:outline-none">
               <span className="text-foreground text-base font-medium">{item.question}</span>
               <Plus
                 className={cn(
