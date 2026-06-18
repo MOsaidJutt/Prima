@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 let _loginLimiter: Ratelimit | null = null
 let _passwordResetLimiter: Ratelimit | null = null
 let _apiLimiter: Ratelimit | null = null
+let _contactLimiter: Ratelimit | null = null
 
 function isUpstashConfigured(): boolean {
   return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
@@ -48,6 +49,18 @@ function getPasswordResetLimiter(): Ratelimit {
     })
   }
   return _passwordResetLimiter
+}
+
+// Phase 7: public marketing-site contact form — unauthenticated, so IP-based.
+function getContactLimiter(): Ratelimit {
+  if (!_contactLimiter) {
+    _contactLimiter = new Ratelimit({
+      redis: Redis.fromEnv(),
+      limiter: Ratelimit.slidingWindow(5, '1 m'), // 5 submissions per minute per IP
+      prefix: 'prima:rl:contact',
+    })
+  }
+  return _contactLimiter
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -114,6 +127,22 @@ export async function checkApiRateLimit(userId: string): Promise<NextResponse | 
   if (!success) {
     return NextResponse.json(
       { error: 'Too many requests. Please slow down.' },
+      { status: 429, headers: { 'Retry-After': '60' } }
+    )
+  }
+  return null
+}
+
+export async function checkContactRateLimit(req: Request): Promise<NextResponse | null> {
+  if (!isUpstashConfigured()) {
+    assertUpstashOrThrow('contact')
+    return null // only reached in non-production
+  }
+  const ip = getIP(req)
+  const { success } = await getContactLimiter().limit(ip)
+  if (!success) {
+    return NextResponse.json(
+      { error: 'Too many submissions. Please wait a minute and try again.' },
       { status: 429, headers: { 'Retry-After': '60' } }
     )
   }

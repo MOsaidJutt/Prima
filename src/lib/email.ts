@@ -494,6 +494,43 @@ export async function sendOpsAlertEmail({ subject, body }: { subject: string; bo
   })
 }
 
+// Phase 7: public marketing-site contact form (src/app/api/contact/route.ts).
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+export async function sendContactFormEmail({
+  name,
+  email,
+  company,
+  message,
+}: {
+  name: string
+  email: string
+  company?: string
+  message: string
+}) {
+  const to = process.env.SALES_EMAIL ?? process.env.ONCALL_ALERT_EMAIL
+  if (!to) return { data: null, error: null }
+  return sendEmail({
+    from: FROM,
+    to,
+    replyTo: email,
+    subject: `[Prima Contact] ${escapeHtml(name)}${company ? ` (${escapeHtml(company)})` : ''}`,
+    html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px">
+      <h2 style="color:#0F172A;margin:0 0 12px">New contact form submission</h2>
+      <p style="color:#334155;margin:4px 0"><strong>Name:</strong> ${escapeHtml(name)}</p>
+      <p style="color:#334155;margin:4px 0"><strong>Email:</strong> ${escapeHtml(email)}</p>
+      ${company ? `<p style="color:#334155;margin:4px 0"><strong>Company:</strong> ${escapeHtml(company)}</p>` : ''}
+      <p style="color:#334155;white-space:pre-wrap;margin-top:16px">${escapeHtml(message)}</p>
+    </div>`,
+  })
+}
+
 // ── Shared HTML template ──────────────────────────────────────────────────────
 
 function emailHtml({

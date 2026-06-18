@@ -16,6 +16,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
   title: { default: 'Prima', template: '%s | Prima' },
   description: 'Intelligent multi-tenant Daily Sales Reporting platform',
 }
