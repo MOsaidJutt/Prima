@@ -4,6 +4,8 @@ Status as of the Phase 7 build. Items marked done were verified in this
 codebase; items marked pending require either live infrastructure access
 or a one-time manual action this assistant cannot perform from the repo.
 
+For the ordered walkthrough of the pending items, see `docs/GO_LIVE.md`.
+
 ## Code quality
 
 - [x] Production build green (`npm run build`)
@@ -37,7 +39,9 @@ or a one-time manual action this assistant cannot perform from the repo.
 
 - [x] Sentry wired with tenant-context tagging
 - [x] PostHog wired (pageviews)
-- [x] BullMQ queue-depth alerting
+- [x] BullMQ queue-depth alerting — only active when running the persistent
+      worker; it inspects BullMQ state, so the HTTP-cron deployment path does
+      not have it (job failures still reach Sentry)
 - [x] On-call alert routing (email, optional WhatsApp via Twilio)
 - [ ] Uptime monitor (UptimeRobot/BetterStack) configured against the live
       domain — see `docs/MONITORING.md`
@@ -76,3 +80,5 @@ or a one-time manual action this assistant cannot perform from the repo.
 - [ ] Super Admin account created and credentials stored securely
 - [ ] `phase7_email_suppression` migration applied (pending Neon
       connectivity as of this build — see git log for context)
+- [ ] Scheduled jobs running — either the persistent worker or all nine
+      cron-job.org entries hitting `/api/cron/<job>` with `CRON_SECRET` set

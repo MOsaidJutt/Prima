@@ -1,8 +1,9 @@
 # Deployment
 
-Prima has two deployable pieces: the Next.js app (web + API routes) and a
-long-running worker process (BullMQ). They deploy separately because
-serverless platforms cannot host the persistent worker.
+Prima deploys as a Next.js app (web + API routes) plus a set of scheduled
+jobs. The jobs run either inside a long-running BullMQ worker process or over
+HTTP from an external scheduler — see §2. The HTTP path exists so the whole
+product can run on a serverless host with no second service to pay for.
 
 ## 1. Next.js app on Vercel
 
