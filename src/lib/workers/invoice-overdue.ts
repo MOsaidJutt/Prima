@@ -1,24 +1,13 @@
 import { Worker } from 'bullmq'
 import { redisConnection } from '@/lib/redis'
-import { prisma } from '@/lib/prisma'
+import { runInvoiceOverdue } from '@/lib/jobs/invoice-overdue'
 
 // Marks ISSUED invoices as OVERDUE when they are past their due date.
-// Triggered by a daily cron via invoiceOverdueQueue.add(... { repeat: { cron: '0 1 * * *' } })
+// Job body lives in @/lib/jobs so it can also run from the cron HTTP route
+// (src/app/api/cron/[job]/route.ts) without a persistent worker process.
 export function startInvoiceOverdueWorker() {
-  return new Worker(
-    'invoice-overdue',
-    async () => {
-      const now = new Date()
-      const result = await prisma.invoice.updateMany({
-        where: {
-          status: 'ISSUED',
-          dueDate: { lt: now },
-          deletedAt: null,
-        },
-        data: { status: 'OVERDUE' },
-      })
-      console.log(`[invoice-overdue] Marked ${result.count} invoices as OVERDUE`)
-    },
-    { connection: redisConnection, concurrency: 1 }
-  )
+  return new Worker('invoice-overdue', async () => runInvoiceOverdue(), {
+    connection: redisConnection,
+    concurrency: 1,
+  })
 }

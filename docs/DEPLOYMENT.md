@@ -31,14 +31,53 @@ serverless platforms cannot host the persistent worker.
    and renews the SSL certificate automatically; no manual cert management
    is needed.
 
-## 2. Worker process
+## 2. Scheduled jobs
 
-`src/lib/workers/index.ts` is the entry point for every BullMQ worker
-(invoice overdue, payment reminders, performance snapshots, inventory
-prediction, dormant-client detection, anomaly detection, platform
-invoicing, subscription lifecycle, matview refresh) plus the Phase 7
-queue-depth monitor. It needs a persistent Node.js process, not a
-serverless function.
+Prima has nine scheduled jobs. Their logic lives in `src/lib/jobs/`, which
+imports no BullMQ or Redis code, so the same functions run two ways. Pick
+**one** — running both would double up work (jobs are written to tolerate it,
+but there is no reason to pay twice).
+
+| Job                      | Schedule (UTC) | What it does                                   |
+| ------------------------ | -------------- | ---------------------------------------------- |
+| `performance-snapshot`   | `30 0 * * *`   | Build yesterday's per-rep snapshots            |
+| `invoice-overdue`        | `0 1 * * *`    | Mark issued invoices overdue past due date     |
+| `matview-refresh`        | `0 2 * * *`    | Refresh dashboard materialized views           |
+| `inventory-prediction`   | `0 3 * * *`    | Regenerate demand forecasts                    |
+| `dormant-client`         | `0 4 * * *`    | Flag high-value clients who stopped ordering   |
+| `payment-reminder`       | `0 7 * * *`    | Client reminders at −3/0/+7/+14/+30 days       |
+| `subscription-lifecycle` | `0 6 * * *`    | Renewals, trial reminders, past-due escalation |
+| `anomaly-detection`      | `0 */6 * * *`  | Revenue drops, skipped DSRs, order spikes      |
+| `platform-invoicing`     | `0 5 1 * *`    | Monthly platform invoices                      |
+
+The schedules above are defined once in `src/lib/jobs/index.ts` and used by
+both paths, so they cannot drift.
+
+### Option A — HTTP cron (no persistent process)
+
+Best when the app is on a serverless host. Each job is exposed at
+`GET /api/cron/<job>`, authenticated with a shared secret.
+
+1. Set `CRON_SECRET` in the app's environment (`openssl rand -hex 32`).
+   The endpoint returns 503 and runs nothing if it is unset.
+2. Point any scheduler at `https://your-domain/api/cron/<job>` on the
+   schedule above, sending the secret as either header:
+   - `Authorization: Bearer <CRON_SECRET>` (what Vercel Cron sends), or
+   - `x-cron-secret: <CRON_SECRET>`
+3. [cron-job.org](https://cron-job.org) covers all nine on its free tier.
+   Vercel's own cron works too, but the Hobby plan allows only two jobs at
+   daily-or-slower frequency, which cannot express `anomaly-detection`.
+
+**Limit to watch:** serverless functions are capped at 60s on Vercel. With few
+tenants the jobs finish well inside that, but `inventory-prediction` grows with
+org and product count because it makes an LLM call per product. If that job
+starts timing out, move to Option B — it is a hosting change, not a code change.
+
+### Option B — persistent worker process
+
+`src/lib/workers/index.ts` is the entry point for every BullMQ worker plus the
+queue-depth monitor. Queue-depth alerting only works on this path, since it
+inspects BullMQ state.
 
 1. Deploy it as its own service on Fly.io, Railway, or Render (any platform
    that runs a long-lived Node process).
@@ -49,6 +88,8 @@ serverless function.
 4. The process registers its own cron schedules on boot (`registerCrons()`)
    and shuts down cleanly on `SIGTERM`, so a standard rolling-restart deploy
    is safe.
+5. Leave `CRON_SECRET` unset (or stop calling the endpoints) so jobs do not
+   run on both paths.
 
 ## 3. Staging environment
 

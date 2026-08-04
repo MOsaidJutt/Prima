@@ -9,28 +9,7 @@ export const performanceSnapshotQueue = new Queue('performance-snapshot', {
 })
 export const matviewRefreshQueue = new Queue('matview-refresh', { connection: redisConnection })
 
-// Schedule payment reminders for the 5 standard intervals around invoice due date
-// daysOffset: -3 (3 days before), 0 (on due day), +7, +14, +30 (days overdue)
-export async function schedulePaymentReminders(
-  invoiceId: string,
-  dueDate: Date,
-  organizationId: string
-) {
-  const offsets = [-3, 0, 7, 14, 30]
-  for (const offset of offsets) {
-    const scheduledAt = new Date(dueDate.getTime() + offset * 24 * 60 * 60 * 1000)
-    const delay = scheduledAt.getTime() - Date.now()
-    if (delay < 0) continue // skip past dates
-
-    await paymentReminderQueue.add(
-      'send-reminder',
-      { invoiceId, organizationId, daysOffset: offset, scheduledAt: scheduledAt.toISOString() },
-      {
-        delay,
-        jobId: `reminder-${invoiceId}-${offset}`,
-        removeOnComplete: true,
-        removeOnFail: 100,
-      }
-    )
-  }
-}
+// Payment reminders are no longer scheduled as per-invoice delayed jobs. The
+// daily sweep in src/lib/jobs/payment-reminder.ts derives them from invoice due
+// dates instead, so reminders survive a Redis flush and work without a
+// persistent worker process. The queue above remains for ad-hoc/manual sends.

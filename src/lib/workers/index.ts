@@ -7,9 +7,21 @@
  * Local dev: `tsx src/lib/workers/index.ts`
  * Production: run via a separate Fly.io / Railway / Render worker process
  *             pointing at the same REDIS_URL.
+ *
+ * On a serverless host with no persistent process, the same jobs run over HTTP
+ * instead — see src/app/api/cron/[job]/route.ts and docs/DEPLOYMENT.md. Both
+ * paths execute the identical functions from src/lib/jobs and share the cron
+ * expressions defined there.
  */
 
-import { invoiceOverdueQueue, performanceSnapshotQueue, matviewRefreshQueue } from '@/lib/queues'
+import type { Queue } from 'bullmq'
+import {
+  invoiceOverdueQueue,
+  paymentReminderQueue,
+  performanceSnapshotQueue,
+  matviewRefreshQueue,
+} from '@/lib/queues'
+import { JOBS, type JobName } from '@/lib/jobs'
 import { startInvoiceOverdueWorker } from './invoice-overdue'
 import { startPaymentReminderWorker } from './payment-reminder'
 import { startPerformanceSnapshotWorker } from './performance-snapshot'
@@ -35,95 +47,34 @@ const platformInvoiceWorker = startPlatformInvoiceWorker()
 const subscriptionLifecycleWorker = startSubscriptionLifecycleWorker()
 // matviewRefreshWorker is started on import
 
-// Register recurring cron jobs
+/** The queue each scheduled job is dispatched on. */
+const JOB_QUEUES: Record<JobName, Queue> = {
+  'invoice-overdue': invoiceOverdueQueue,
+  'payment-reminder': paymentReminderQueue,
+  'performance-snapshot': performanceSnapshotQueue,
+  'matview-refresh': matviewRefreshQueue,
+  'inventory-prediction': inventoryPredictionQueue,
+  'dormant-client': dormantClientQueue,
+  'anomaly-detection': anomalyDetectionQueue,
+  'platform-invoicing': platformInvoiceQueue,
+  'subscription-lifecycle': subscriptionLifecycleQueue,
+}
+
+// Register recurring cron jobs from the shared schedule in @/lib/jobs, so the
+// worker and the HTTP cron route can never drift apart.
 async function registerCrons() {
-  // Mark overdue invoices every day at 01:00 UTC
-  await invoiceOverdueQueue.add(
-    'mark-overdue',
-    {},
-    {
-      repeat: { pattern: '0 1 * * *' },
-      jobId: 'mark-overdue-cron',
-      removeOnComplete: true,
-    }
-  )
-
-  // Generate performance snapshots every night at 00:30 UTC
-  await performanceSnapshotQueue.add(
-    'daily-snapshot',
-    {},
-    {
-      repeat: { pattern: '30 0 * * *' },
-      jobId: 'daily-snapshot-cron',
-      removeOnComplete: true,
-    }
-  )
-
-  // Refresh materialized views every night at 02:00 UTC
-  await matviewRefreshQueue.add(
-    'refresh-matviews',
-    {},
-    {
-      repeat: { pattern: '0 2 * * *' },
-      jobId: 'matview-refresh-cron',
-      removeOnComplete: true,
-    }
-  )
-
-  // Inventory demand predictions — every night at 03:00 UTC
-  await inventoryPredictionQueue.add(
-    'run-predictions',
-    {},
-    {
-      repeat: { pattern: '0 3 * * *' },
-      jobId: 'inventory-prediction-cron',
-      removeOnComplete: true,
-    }
-  )
-
-  // Dormant client detection — every day at 04:00 UTC
-  await dormantClientQueue.add(
-    'detect-dormant',
-    {},
-    {
-      repeat: { pattern: '0 4 * * *' },
-      jobId: 'dormant-client-cron',
-      removeOnComplete: true,
-    }
-  )
-
-  // Anomaly detection — every 6 hours
-  await anomalyDetectionQueue.add(
-    'detect-anomalies',
-    {},
-    {
-      repeat: { pattern: '0 */6 * * *' },
-      jobId: 'anomaly-detection-cron',
-      removeOnComplete: true,
-    }
-  )
-
-  // Platform invoicing — 1st of each month at 05:00 UTC
-  await platformInvoiceQueue.add(
-    'generate-invoices',
-    {},
-    {
-      repeat: { pattern: '0 5 1 * *' },
-      jobId: 'platform-invoicing-cron',
-      removeOnComplete: true,
-    }
-  )
-
-  // Subscription lifecycle (trial reminders, renewals, past-due/suspension escalation) — daily at 06:00 UTC
-  await subscriptionLifecycleQueue.add(
-    'run-lifecycle',
-    {},
-    {
-      repeat: { pattern: '0 6 * * *' },
-      jobId: 'subscription-lifecycle-cron',
-      removeOnComplete: true,
-    }
-  )
+  for (const [name, job] of Object.entries(JOBS)) {
+    const queue = JOB_QUEUES[name as JobName]
+    await queue.add(
+      name,
+      {},
+      {
+        repeat: { pattern: job.schedule },
+        jobId: `${name}-cron`,
+        removeOnComplete: true,
+      }
+    )
+  }
 
   console.log('[workers] Cron jobs registered')
 }

@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 import { withTenantApi, apiOk, apiError } from '@/lib/api-helpers'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
-import { schedulePaymentReminders } from '@/lib/queues'
 import { cacheDel, dashboardKey } from '@/lib/dashboard-cache'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -23,10 +22,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id, organizationId: ctx.organizationId },
     })
 
-    // Schedule payment reminders if due date set
-    if (invoice.dueDate) {
-      await schedulePaymentReminders(id, invoice.dueDate, ctx.organizationId)
-    }
+    // Payment reminders are not scheduled here: the daily payment-reminder
+    // sweep derives them from invoice due dates (src/lib/jobs/payment-reminder.ts),
+    // so an issued invoice is picked up automatically.
 
     await createAuditLog({
       organizationId: ctx.organizationId,
