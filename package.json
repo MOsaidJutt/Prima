@@ -15,6 +15,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "demo:refresh": "tsx scripts/refresh-demo-data.ts",
     "db:studio": "prisma studio",
     "test": "vitest",
     "test:ui": "vitest --ui",
